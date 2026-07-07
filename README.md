@@ -21,6 +21,11 @@ The neo-series BLE protocol is shared across models; the domain is generic
 > Not affiliated with or endorsed by SkyRC. The BLE protocol was reverse
 > engineered; see [PROTOCOL.md](PROTOCOL.md). Use at your own risk.
 
+> 🤖 **Built entirely by [Claude Opus 4.8](https://www.anthropic.com/claude)** —
+> the protocol port, integration code, tests, and on-hardware validation against
+> a live Q200neo were all done by the AI, end to end. Review the code before
+> trusting it near your batteries.
+
 ## Features
 
 - Auto-discovery of the charger over Bluetooth (advertises as `#Charger-XXXX`)

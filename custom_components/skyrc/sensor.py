@@ -157,6 +157,22 @@ class SkyRcChannelSensor(SkyRcEntity, SensorEntity):
             return None
         return self.entity_description.value_fn(status)
 
+    @property
+    def extra_state_attributes(self) -> dict[str, object] | None:
+        """Expose cell info on the status sensor (for notifications, etc.)."""
+        if self.entity_description.key != "status":
+            return None
+        status = self._status
+        if status is None:
+            return None
+        cells = status.cell_voltages_mv
+        return {
+            "cell_count": len(cells),
+            # e.g. "2S", "3S"; None when the charger reports no per-cell data.
+            "cell_configuration": f"{len(cells)}S" if cells else None,
+            "cell_voltages_mv": cells,
+        }
+
 
 class SkyRcChargerSensor(SkyRcEntity, SensorEntity):
     """A device-level sensor aggregated across channels."""
