@@ -28,6 +28,10 @@ from .const import (
     STATE_NAMES,
 )
 
+# Plausible per-cell voltage window (mV): NiMH ~1.0 V up to LiPo ~4.3 V.
+CELL_MV_MIN = 500
+CELL_MV_MAX = 5000
+
 
 def build_command(command: int, args: bytes = b"") -> bytes:
     """Build a request frame for ``command`` with optional ``args``."""
@@ -175,19 +179,22 @@ def parse_channel_status(data: bytes) -> ChannelStatus | None:
     status.duration_s = _u16(data, 4)
     status.voltage_mv = _u16(data, 6)
     status.current_ma = _u16(data, 8)
-    status.battery_temp_c = _s8(_u8(data, 10))
+    # Battery (external) probe reports 0 when no probe is attached.
+    batt = _u8(data, 10)
+    status.battery_temp_c = None if batt in (None, 0) else _s8(batt)
     status.internal_temp_c = _s8(_u8(data, 11))
     status.resistance_mohm = _u16(data, 12)
 
     # Cell voltages 1–6 at d[14..25], plus 7–8 at d[26..29] on longer payloads.
+    # Only plausible single-cell readings are kept; empty slots report 0 and
+    # some trailing bytes carry small non-cell values.
     cells: list[int] = []
     for offset in range(14, 30, 2):
         value = _u16(data, offset)
         if value is None:
             break
-        if value == 0:
-            continue  # unpopulated cell slot
-        cells.append(value)
+        if CELL_MV_MIN <= value <= CELL_MV_MAX:
+            cells.append(value)
     status.cell_voltages_mv = cells
 
     return status

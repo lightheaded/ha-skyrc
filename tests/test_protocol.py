@@ -113,6 +113,21 @@ def test_two_frames_in_one_chunk():
     assert [f.data[0] for f in frames] == [0x01, 0x02]
 
 
+def test_live_frame_channel_c_done():
+    # Captured from a real Q200neo: channel C, 2S pack, charge complete.
+    data = bytes.fromhex(
+        "04030155052820bc0005001f0000105b105f0000000000090009000000000100"
+    )
+    status = parse_channel_status(data)
+    assert status.channel == "C"
+    assert status.is_done
+    assert status.voltage_mv == 8380
+    assert status.current_ma == 5
+    assert status.internal_temp_c == 31
+    assert status.battery_temp_c is None  # no external probe attached
+    assert status.cell_voltages_mv == [4187, 4191]  # noise bytes filtered out
+
+
 def test_bad_checksum_dropped():
     frame = bytearray(_status_frame(bytes([0x01, 0x02, 0x00, 0x00])))
     frame[-1] ^= 0xFF  # corrupt checksum
