@@ -22,3 +22,6 @@ jobs:
       - uses: hacs/action@main
         with:
           category: integration
+          # Brands live in home-assistant/brands (separate upstream PR); this is
+          # a publish-to-default-store concern, not required for a custom repo.
+          ignore: brands
