@@ -1,4 +1,4 @@
-"""The SkyRC Q200neo Charger integration."""
+"""The SkyRC Charger integration."""
 
 from __future__ import annotations
 

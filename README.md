@@ -1,12 +1,22 @@
-# SkyRC Q200neo Charger — Home Assistant integration
+# SkyRC Charger — Home Assistant integration
 
-[![Validate](https://github.com/lightheaded/ha-skyrc-q200neo/actions/workflows/validate.yml/badge.svg)](https://github.com/lightheaded/ha-skyrc-q200neo/actions/workflows/validate.yml)
+[![Validate](https://github.com/lightheaded/ha-skyrc/actions/workflows/validate.yml/badge.svg)](https://github.com/lightheaded/ha-skyrc/actions/workflows/validate.yml)
 [![hacs](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz)
 
-An **unofficial** custom integration that monitors a [SkyRC Q200neo](https://www.skyrc.com/)
-four-channel smart charger over Bluetooth Low Energy and exposes each channel's
-state as Home Assistant entities — so you can get a push notification the moment
-a battery finishes charging.
+An **unofficial** custom integration that monitors [SkyRC](https://www.skyrc.com/)
+smart chargers over Bluetooth Low Energy and exposes each channel's state as
+Home Assistant entities — so you can get a push notification the moment a battery
+finishes charging.
+
+### Supported chargers
+
+| Model | Status |
+|---|---|
+| Q200neo (product code `100197`) | ✅ Tested |
+| Other SkyRC "neo"-series chargers | ⚠️ May work (same BLE protocol) — reports welcome |
+
+The neo-series BLE protocol is shared across models; the domain is generic
+(`skyrc`) so additional models can be added without breaking existing entities.
 
 > Not affiliated with or endorsed by SkyRC. The BLE protocol was reverse
 > engineered; see [PROTOCOL.md](PROTOCOL.md). Use at your own risk.
@@ -34,18 +44,18 @@ a battery finishes charging.
 ### HACS (custom repository)
 
 1. HACS → ⋮ → **Custom repositories**
-2. Add `https://github.com/lightheaded/ha-skyrc-q200neo`, category **Integration**
-3. Install **SkyRC Q200neo Charger**, then restart Home Assistant
+2. Add `https://github.com/lightheaded/ha-skyrc`, category **Integration**
+3. Install **SkyRC Charger**, then restart Home Assistant
 
 ### Manual
 
-Copy `custom_components/skyrc_q200neo` into your HA `config/custom_components/`
+Copy `custom_components/skyrc` into your HA `config/custom_components/`
 directory and restart Home Assistant.
 
 ## Setup
 
 The charger is usually auto-discovered: **Settings → Devices & Services →
-Discovered**. Otherwise add it via **+ Add Integration → SkyRC Q200neo Charger**
+Discovered**. Otherwise add it via **+ Add Integration → SkyRC Charger**
 and pick it from the list of chargers in range.
 
 ## Notify when charging finishes

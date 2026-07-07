@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Final
 
-DOMAIN: Final = "skyrc_q200neo"
+DOMAIN: Final = "skyrc"
 
 MANUFACTURER: Final = "SkyRC"
 MODEL: Final = "Q200neo"

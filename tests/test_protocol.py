@@ -12,7 +12,7 @@ import types
 _COMP = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     "custom_components",
-    "skyrc_q200neo",
+    "skyrc",
 )
 _pkg = types.ModuleType("_skyrc")
 _pkg.__path__ = [_COMP]
