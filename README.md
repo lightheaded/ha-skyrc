@@ -70,10 +70,15 @@ and pick it from the list of chargers in range.
 ## Notify when charging finishes
 
 The integration deliberately ships **no** notification logic — wire it up with a
-plain automation:
+plain automation. This one fires when any channel finishes and reports the
+channel, cell configuration, and pack voltage, e.g.:
+
+> 🔋 SkyRC charging complete
+> **Channel B finished charging (2S) — 8.39 V**
 
 ```yaml
-alias: Notify when a battery finishes charging
+alias: SkyRC — notify when charging done
+mode: queued
 triggers:
   - trigger: state
     entity_id:
@@ -83,11 +88,24 @@ triggers:
       - sensor.charger_8f12_channel_d_status
     to: "done"
 actions:
-  - action: notify.mobile_app_your_phone
+  - action: notify.main # or notify.mobile_app_your_phone
     data:
-      title: Charging complete
-      message: "{{ trigger.to_state.attributes.friendly_name }} is done."
+      title: 🔋 SkyRC charging complete
+      message: >-
+        {%- set eid = trigger.entity_id -%}
+        {%- set ch = eid.split('_channel_')[1].split('_status')[0] | upper -%}
+        {%- set v = states(eid.replace('_status', '_voltage')) | float(0) | round(2) -%}
+        {%- set cells = state_attr(eid, 'cell_configuration') -%}
+        Channel {{ ch }} finished charging{% if cells %} ({{ cells }}){% endif %} — {{ v }} V
 ```
+
+Replace `charger_8f12` with your charger's entity-ID slug (it follows the
+advertised name, e.g. `#Charger-8F12` → `charger_8f12`). The `cell_configuration`
+attribute (`2S`, `3S`, …) lives on each channel's **status** sensor; it is omitted
+from the message when the charger reports no per-cell data.
+
+Prefer the enum states over friendly-name string matching — the status sensor
+reports `done` / `working` / `idle` / `error` / `ready` / `standby` / `dc_power`.
 
 ## Development
 
