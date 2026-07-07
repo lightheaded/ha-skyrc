@@ -64,6 +64,7 @@ SENSORS: tuple[SkyRcSensorDescription, ...] = (
         device_class=SensorDeviceClass.VOLTAGE,
         native_unit_of_measurement=UnitOfElectricPotential.VOLT,
         state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=2,
         value_fn=_voltage,
     ),
     SkyRcSensorDescription(
@@ -72,6 +73,7 @@ SENSORS: tuple[SkyRcSensorDescription, ...] = (
         device_class=SensorDeviceClass.CURRENT,
         native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
         state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=2,
         value_fn=_current,
     ),
     SkyRcSensorDescription(
