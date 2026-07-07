@@ -1,0 +1,46 @@
+{
+  "config": {
+    "flow_title": "{name}",
+    "step": {
+      "confirm": {
+        "description": "Do you want to set up {name}?"
+      },
+      "user": {
+        "description": "Select the SkyRC charger to add.",
+        "data": {
+          "address": "Charger"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "This charger is already configured.",
+      "no_devices_found": "No SkyRC chargers found in Bluetooth range. Make sure the charger is powered on and near a Bluetooth adapter or proxy."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "status": {
+        "name": "Channel {channel} status",
+        "state": {
+          "working": "Working",
+          "idle": "Idle",
+          "done": "Done",
+          "error": "Error",
+          "ready": "Ready",
+          "standby": "Standby",
+          "dc_power": "DC power supply",
+          "unknown": "Unknown"
+        }
+      },
+      "capacity": { "name": "Channel {channel} capacity" },
+      "voltage": { "name": "Channel {channel} voltage" },
+      "current": { "name": "Channel {channel} current" },
+      "duration": { "name": "Channel {channel} duration" },
+      "battery_temp": { "name": "Channel {channel} battery temperature" },
+      "charger_temp": { "name": "Charger temperature" }
+    },
+    "binary_sensor": {
+      "charging": { "name": "Channel {channel} charging" }
+    }
+  }
+}
