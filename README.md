@@ -38,6 +38,10 @@ The neo-series BLE protocol is shared across models; the domain is generic
 - Charger internal temperature (diagnostic)
 - Connect → poll → disconnect cycle that leaves the single BLE slot free for the SkyCharger phone app between polls
 
+### Example
+
+<img width="760" height="1146" alt="Screenshot 2026-07-07 at 10 22 12" src="https://github.com/user-attachments/assets/60a948e8-1b09-4898-bfe9-59b04fbbe7ce" />
+
 ## Requirements
 
 - Home Assistant **2024.12** or newer
