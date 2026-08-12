@@ -31,8 +31,7 @@ The neo-series BLE protocol is shared across models; the domain is generic
 - Auto-discovery of the charger over Bluetooth (advertises as `#Charger-XXXX`)
 - Works with a local Bluetooth adapter **or an [ESPHome Bluetooth proxy](https://esphome.io/components/bluetooth_proxy.html)** — the charger doesn't need to be near the HA host
 - Per-channel (A–D) entities:
-  - **Status** (`working` / `idle` / `done` / `error` / `ready` / `standby` / `dc_power`)
-  - **Charging** binary sensor
+  - **Status** (`charging` / `discharging` / `idle` / `done` / `error` / `ready` / `standby` / `dc_power` / `working`), with the battery type and program as attributes
   - Capacity (mAh), Voltage (V), Current (A), Battery temperature (°C)
   - Duration (disabled by default)
 - Charger internal temperature (diagnostic)
@@ -60,6 +59,12 @@ The neo-series BLE protocol is shared across models; the domain is generic
 
 Copy `custom_components/skyrc` into your HA `config/custom_components/`
 directory and restart Home Assistant.
+
+### Upgrading
+
+Breaking changes and what to do about them are written up in the
+[release notes](https://github.com/lightheaded/ha-skyrc/releases) for the
+version you are upgrading to.
 
 ## Setup
 
@@ -105,7 +110,28 @@ attribute (`2S`, `3S`, …) lives on each channel's **status** sensor; it is omi
 from the message when the charger reports no per-cell data.
 
 Prefer the enum states over friendly-name string matching — the status sensor
-reports `done` / `working` / `idle` / `error` / `ready` / `standby` / `dc_power`.
+reports `done` / `charging` / `discharging` / `idle` / `error` / `ready` /
+`standby` / `dc_power` / `working`.
+
+### Charging or discharging?
+
+The charger reports a single "working" state for both directions, so the status
+sensor reads the channel's program (battery type + charge/discharge program) to
+tell them apart. It is also published as attributes on the status sensor:
+
+| Attribute | Example |
+|---|---|
+| `battery_type` | `lipo`, `liion`, `life`, `lihv`, `nimh`, `nicd`, `pb`, `pb_agm` |
+| `program` | `balance_charge`, `charge`, `fast_charge`, `auto_charge`, `re_peak`, `discharge`, `storage`, `cycle` |
+
+The program is kept while a channel is working and after it is done, so a
+"charging done" automation can say *what* finished — `{{ state_attr(eid,
+'program') }}`. It is cleared when the channel goes back to idle.
+
+Two cases stay `working` rather than guessing: the **storage** and **cycle**
+programs (they charge *or* discharge depending on the pack), and chargers that
+do not answer the basic-info query — which is what happens when a channel
+password is set in the SkyCharger app.
 
 ## Development
 

@@ -49,7 +49,7 @@ SENSORS: tuple[SkyRcSensorDescription, ...] = (
         translation_key="status",
         device_class=SensorDeviceClass.ENUM,
         options=STATE_OPTIONS,
-        value_fn=lambda s: s.state_name,
+        value_fn=lambda s: s.detailed_state,
     ),
     SkyRcSensorDescription(
         key="capacity",
@@ -159,7 +159,7 @@ class SkyRcChannelSensor(SkyRcEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, object] | None:
-        """Expose cell info on the status sensor (for notifications, etc.)."""
+        """Expose cell and program info on the status sensor (notifications)."""
         if self.entity_description.key != "status":
             return None
         status = self._status
@@ -171,6 +171,10 @@ class SkyRcChannelSensor(SkyRcEntity, SensorEntity):
             # e.g. "2S", "3S"; None when the charger reports no per-cell data.
             "cell_configuration": f"{len(cells)}S" if cells else None,
             "cell_voltages_mv": cells,
+            # e.g. "lipo" / "nimh" and "balance_charge" / "discharge"; None
+            # until the charger reports the channel's basic info.
+            "battery_type": status.battery_type,
+            "program": status.program,
         }
 
 

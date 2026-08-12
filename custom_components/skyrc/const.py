@@ -22,6 +22,11 @@ FRAME_START: Final = 0x0F
 # Commands (subset used for monitoring).
 CMD_QUERY_CHANNEL_STATUS: Final = 0x55
 CMD_INFO: Final = 0x57
+CMD_QUERY_BASIC_INFO: Final = 0x5F
+
+# Channel password digits sent with QUERY_BASIC_INFO. "0000" is the factory
+# default and the value the SkyCharger app starts from.
+DEFAULT_PASSWORD: Final = "0000"
 
 # Channels A–D and their bit masks.
 CHANNELS: Final = ("A", "B", "C", "D")
@@ -47,10 +52,74 @@ STATE_NAMES: Final[dict[int, str]] = {
     STATE_STATE6: "standby",
     STATE_DC_SUPPLY: "dc_power",
 }
-STATE_OPTIONS: Final = list(dict.fromkeys(STATE_NAMES.values())) + ["unknown"]
 
-# States in which a battery is actively being charged/discharged.
-ACTIVE_STATES: Final = frozenset({STATE_WORKING})
+# Derived states: the charger reports a single "working" state, so the
+# charge/discharge direction comes from the channel's program (see below).
+STATE_CHARGING: Final = "charging"
+STATE_DISCHARGING: Final = "discharging"
+
+STATE_OPTIONS: Final = list(dict.fromkeys(STATE_NAMES.values())) + [
+    STATE_CHARGING,
+    STATE_DISCHARGING,
+    "unknown",
+]
+
+# --- QUERY_BASIC_INFO (0x5F) ---------------------------------------------
+
+CHEM_LITHIUM: Final = "lithium"
+CHEM_NICKEL: Final = "nickel"
+CHEM_LEAD: Final = "lead"
+
+# Battery type (d[2]) → name / chemistry.
+BATTERY_TYPE_NAMES: Final[dict[int, str]] = {
+    0x00: "lipo",
+    0x01: "liion",
+    0x02: "life",
+    0x03: "lihv",
+    0x04: "nimh",
+    0x05: "nicd",
+    0x06: "pb",
+    0x07: "pb_agm",
+}
+BATTERY_CHEMISTRY: Final[dict[int, str]] = {
+    0x00: CHEM_LITHIUM,
+    0x01: CHEM_LITHIUM,
+    0x02: CHEM_LITHIUM,
+    0x03: CHEM_LITHIUM,
+    0x04: CHEM_NICKEL,
+    0x05: CHEM_NICKEL,
+    0x06: CHEM_LEAD,
+    0x07: CHEM_LEAD,
+}
+
+# Program byte (d[4]) → operation mode. The codes are reused per chemistry.
+PROGRAM_NAMES: Final[dict[str, dict[int, str]]] = {
+    CHEM_LITHIUM: {
+        0x00: "balance_charge",
+        0x01: "charge",
+        0x02: "discharge",
+        0x03: "storage",
+        0x04: "fast_charge",
+    },
+    CHEM_NICKEL: {
+        0x00: "charge",
+        0x01: "auto_charge",
+        0x02: "discharge",
+        0x03: "re_peak",
+        0x04: "cycle",
+    },
+    CHEM_LEAD: {
+        0x00: "charge",
+        0x01: "discharge",
+    },
+}
+
+# Programs whose direction is unambiguous. "storage" and "cycle" charge *or*
+# discharge depending on where the pack starts, so they stay plain "working".
+CHARGE_PROGRAMS: Final = frozenset(
+    {"balance_charge", "charge", "fast_charge", "auto_charge", "re_peak"}
+)
+DISCHARGE_PROGRAMS: Final = frozenset({"discharge"})
 
 # Sentinel meaning "value not measured".
 INVALID_U16: Final = 0xFFFF
