@@ -205,6 +205,13 @@ CYCLE_ORDER_CODES: Final[dict[str, int]] = {
     name: code for code, name in CYCLE_ORDER_NAMES.items()
 }
 
+# Beep volume (System Settings > Volume). The charger stores any byte it is
+# given; these are the three levels its own menu offers.
+BEEP_VOLUME_NAMES: Final[dict[int, str]] = {0: "off", 1: "low", 2: "high"}
+BEEP_VOLUMES: Final[dict[str, int]] = {
+    name: code for code, name in BEEP_VOLUME_NAMES.items()
+}
+
 # Cells per chemistry (BATTERY_CHEMISTRY_ATTR in the reference app).
 CELL_LIMITS: Final[dict[str, Limit]] = {
     CHEM_LITHIUM: Limit(1, 6, 1, 3),

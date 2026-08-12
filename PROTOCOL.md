@@ -287,9 +287,9 @@ client stops asking after three timeouts and the direction falls back to
 - The Q200neo offers AGM and Cold charge programs for lead-acid packs, and a
   Pb AGM battery type. The reference app has no program byte for either, so they
   are left out rather than guessed at.
-- `SET_SYSTEM_INFO` (`0x11`) is mapped and works (see above) but is not yet
-  exposed as entities. Five of its settings acknowledge without any readable
-  effect and are best left alone until a charger reports them.
+- Five `SET_SYSTEM_INFO` settings acknowledge without any readable effect
+  (temperature, balance, LCD backlight, warning, sleep time). They stay
+  unexposed until a charger is found that reports them.
 - The device identifies itself as ASCII `100197` in the reference app's device
   table, matching the product code, but the `INFO` command that would return it
   is not answered.

@@ -25,6 +25,8 @@ from .const import (
     CHEM_NICKEL,
     CMD_QUERY_BASIC_INFO,
     CMD_QUERY_CHANNEL_STATUS,
+    CMD_QUERY_SYSTEM_INFO,
+    CMD_SET_SYSTEM_INFO,
     CMD_START_CHARGE,
     CMD_STOP_CHARGE,
     DEFAULT_PASSWORD,
@@ -32,10 +34,17 @@ from .const import (
     FRAME_START,
     INVALID_U16,
     MASK_TO_CHANNEL,
+    POWER_STEP_W,
     PROGRAM_CYCLE,
     PROGRAM_NAMES,
     PROGRAM_RE_PEAK,
     PROGRAM_STORAGE,
+    SETTING_CAPACITY,
+    SETTING_MAX_INPUT_POWER,
+    SETTING_MIN_INPUT_VOLTAGE,
+    SETTING_SAFETY_TIMER,
+    SETTING_SOUND,
+    SETTINGS_MASK,
     STATE_CHARGING,
     STATE_DISCHARGING,
     STATE_DONE,
@@ -355,5 +364,91 @@ def parse_basic_info(data: bytes) -> ChannelBasicInfo | None:
         if chemistry
         else None,
         password_required=data[9] == 1,
+        raw=data.hex(),
+    )
+
+
+# --- charger settings (QUERY_SYSTEM_INFO / SET_SYSTEM_INFO) ---------------
+
+
+def build_system_info_query(mask: int = SETTINGS_MASK) -> bytes:
+    """Build a QUERY_SYSTEM_INFO frame."""
+    return build_command(CMD_QUERY_SYSTEM_INFO, bytes([mask]))
+
+
+def _build_setting(setting: int, b1: int, b2: int = 0, b3: int = 0) -> bytes:
+    return build_command(
+        CMD_SET_SYSTEM_INFO, bytes([SETTINGS_MASK, setting, b1, b2, b3])
+    )
+
+
+def build_set_safety_timer(enabled: bool, minutes: int) -> bytes:
+    """Stop a run after ``minutes``; the charger's Task Parameters ▸ Safety Timer."""
+    return _build_setting(
+        SETTING_SAFETY_TIMER, 1 if enabled else 0, *divmod(minutes, 0x100)
+    )
+
+
+def build_set_capacity_limit(enabled: bool, capacity_mah: int) -> bytes:
+    """Stop a run after ``capacity_mah``; Task Parameters ▸ Max. Capacity."""
+    return _build_setting(
+        SETTING_CAPACITY, 1 if enabled else 0, *divmod(capacity_mah, 0x100)
+    )
+
+
+def build_set_min_input_voltage(millivolts: int) -> bytes:
+    """Refuse to run below this input voltage; System Settings ▸ Min. Input Voltage."""
+    return _build_setting(SETTING_MIN_INPUT_VOLTAGE, *divmod(millivolts, 0x100))
+
+
+def build_set_max_input_power(watts: int) -> bytes:
+    """Cap total charge power; System Settings ▸ Max. Input Power."""
+    return _build_setting(SETTING_MAX_INPUT_POWER, watts // POWER_STEP_W)
+
+
+def build_set_sounds(beep_volume: int, completion_beep: bool) -> bytes:
+    """Set both beep bytes; System Settings ▸ Volume and Completion Signal."""
+    return _build_setting(SETTING_SOUND, beep_volume, 1 if completion_beep else 0)
+
+
+@dataclass
+class ChargerSettings:
+    """The charger's own settings, as reported by QUERY_SYSTEM_INFO.
+
+    Global, not per channel: writing one on channel A changes what every
+    channel reports.
+    """
+
+    safety_timer_enabled: bool
+    safety_timer_minutes: int
+    capacity_limit_enabled: bool
+    capacity_limit_mah: int
+    beep_volume: int
+    completion_beep: bool
+    min_input_voltage_mv: int
+    max_input_power_w: int
+    raw: str = ""
+
+
+def parse_system_info(data: bytes) -> ChargerSettings | None:
+    """Parse a QUERY_SYSTEM_INFO payload (bytes after the command echo).
+
+    Offsets were mapped by writing one setting at a time and diffing the
+    payload, then cross-checked against the charger's own menus. Offsets past
+    d[14] are not decoded: this firmware returns a payload too short for the
+    fields the reference app reads there.
+    """
+    if len(data) < 15:
+        return None
+
+    return ChargerSettings(
+        safety_timer_enabled=data[2] == 1,
+        safety_timer_minutes=(data[3] << 8) | data[4],
+        capacity_limit_enabled=data[5] == 1,
+        capacity_limit_mah=(data[6] << 8) | data[7],
+        beep_volume=data[8],
+        completion_beep=data[9] != 0,
+        min_input_voltage_mv=(data[10] << 8) | data[11],
+        max_input_power_w=data[13] * POWER_STEP_W,
         raw=data.hex(),
     )

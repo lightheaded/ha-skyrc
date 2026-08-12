@@ -49,12 +49,24 @@
           "unknown": "Unknown"
         }
       },
-      "capacity": { "name": "Channel {channel} capacity" },
-      "voltage": { "name": "Channel {channel} voltage" },
-      "current": { "name": "Channel {channel} current" },
-      "duration": { "name": "Channel {channel} duration" },
-      "battery_temp": { "name": "Channel {channel} battery temperature" },
-      "charger_temp": { "name": "Charger temperature" }
+      "capacity": {
+        "name": "Channel {channel} capacity"
+      },
+      "voltage": {
+        "name": "Channel {channel} voltage"
+      },
+      "current": {
+        "name": "Channel {channel} current"
+      },
+      "duration": {
+        "name": "Channel {channel} duration"
+      },
+      "battery_temp": {
+        "name": "Channel {channel} battery temperature"
+      },
+      "charger_temp": {
+        "name": "Charger temperature"
+      }
     },
     "select": {
       "battery_type": {
@@ -86,22 +98,69 @@
           "charge_discharge": "Charge, then discharge",
           "discharge_charge": "Discharge, then charge"
         }
+      },
+      "beep_volume": {
+        "name": "Beep volume",
+        "state": {
+          "off": "Off",
+          "low": "Low",
+          "high": "High"
+        }
       }
     },
     "number": {
-      "cell_count": { "name": "Channel {channel} cell count" },
-      "charge_current": { "name": "Channel {channel} charge current" },
-      "discharge_current": { "name": "Channel {channel} discharge current" },
-      "charge_voltage": { "name": "Channel {channel} charge voltage per cell" },
+      "cell_count": {
+        "name": "Channel {channel} cell count"
+      },
+      "charge_current": {
+        "name": "Channel {channel} charge current"
+      },
+      "discharge_current": {
+        "name": "Channel {channel} discharge current"
+      },
+      "charge_voltage": {
+        "name": "Channel {channel} charge voltage per cell"
+      },
       "discharge_voltage": {
         "name": "Channel {channel} discharge voltage per cell"
       },
-      "track_voltage": { "name": "Channel {channel} peak sensitivity" },
-      "cycle_number": { "name": "Channel {channel} cycle count" }
+      "track_voltage": {
+        "name": "Channel {channel} peak sensitivity"
+      },
+      "cycle_number": {
+        "name": "Channel {channel} cycle count"
+      },
+      "safety_timer": {
+        "name": "Safety timer"
+      },
+      "capacity_limit": {
+        "name": "Capacity limit"
+      },
+      "min_input_voltage": {
+        "name": "Minimum input voltage"
+      },
+      "max_input_power": {
+        "name": "Maximum input power"
+      }
     },
     "button": {
-      "start": { "name": "Channel {channel} start" },
-      "stop": { "name": "Channel {channel} stop" }
+      "start": {
+        "name": "Channel {channel} start"
+      },
+      "stop": {
+        "name": "Channel {channel} stop"
+      }
+    },
+    "switch": {
+      "safety_timer_enabled": {
+        "name": "Safety timer cut-off"
+      },
+      "capacity_limit_enabled": {
+        "name": "Capacity cut-off"
+      },
+      "completion_beep": {
+        "name": "Completion beep"
+      }
     }
   },
   "services": {

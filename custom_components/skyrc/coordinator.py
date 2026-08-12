@@ -23,7 +23,7 @@ from .const import (
     DOMAIN,
 )
 from .programs import ProgramConfig, ProgramError, validate
-from .protocol import ChannelStatus
+from .protocol import ChannelStatus, ChargerSettings
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -88,6 +88,19 @@ class SkyRcCoordinator(DataUpdateCoordinator[dict[str, ChannelStatus]]):
             raise HomeAssistantError(str(err)) from err
         await self.async_request_refresh()
         return status
+
+    @property
+    def settings(self) -> ChargerSettings | None:
+        """The charger's own settings, as of the last poll."""
+        return self._client.settings
+
+    async def async_write_settings(self, **changes: object) -> None:
+        """Change charger settings, then tell the entities."""
+        try:
+            await self._client.async_write_settings(self._ble_device(), changes)
+        except SkyRcError as err:
+            raise HomeAssistantError(str(err)) from err
+        self.async_update_listeners()
 
     async def async_stop(self, channel: str) -> ChannelStatus | None:
         """Stop ``channel``."""

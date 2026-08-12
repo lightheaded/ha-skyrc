@@ -13,6 +13,8 @@ from .coordinator import SkyRcConfigEntry, SkyRcCoordinator
 from .entity import SkyRcEntity
 from .programs import (
     BATTERY_TYPE_OPTIONS,
+    BEEP_VOLUME_NAMES,
+    BEEP_VOLUMES,
     CYCLE_CHARGE_FIRST,
     CYCLE_DISCHARGE_FIRST,
     CYCLE_MODEL,
@@ -28,9 +30,9 @@ async def async_setup_entry(
     entry: SkyRcConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Set up the battery type and program selects for all four channels."""
+    """Set up the per-channel program selects and the charger's beep volume."""
     coordinator = entry.runtime_data
-    async_add_entities(
+    entities: list[SelectEntity] = [
         select
         for channel in CHANNELS
         for select in (
@@ -38,7 +40,9 @@ async def async_setup_entry(
             SkyRcProgramSelect(coordinator, channel),
             SkyRcCycleOrderSelect(coordinator, channel),
         )
-    )
+    ]
+    entities.append(SkyRcBeepVolumeSelect(coordinator))
+    async_add_entities(entities)
 
 
 class SkyRcStagedSelect(SkyRcEntity, SelectEntity, RestoreEntity):
@@ -158,3 +162,31 @@ class SkyRcCycleOrderSelect(SkyRcStagedSelect):
         """The order is stored as the cycle_model byte, not by name."""
         if value in CYCLE_ORDER_CODES:
             self._staged.cycle_model = CYCLE_ORDER_CODES[value]
+
+
+class SkyRcBeepVolumeSelect(SkyRcEntity, SelectEntity):
+    """The charger's beep volume — System Settings ▸ Volume."""
+
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_translation_key = "beep_volume"
+
+    def __init__(self, coordinator: SkyRcCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_options = list(BEEP_VOLUMES)
+        self._attr_unique_id = f"{coordinator.address}_beep_volume"
+
+    @property
+    def available(self) -> bool:
+        return super().available and self.coordinator.settings is not None
+
+    @property
+    def current_option(self) -> str | None:
+        settings = self.coordinator.settings
+        if settings is None:
+            return None
+        # The charger stores whatever it is given; anything outside the three
+        # known levels is reported as unknown rather than guessed at.
+        return BEEP_VOLUME_NAMES.get(settings.beep_volume)
+
+    async def async_select_option(self, option: str) -> None:
+        await self.coordinator.async_write_settings(beep_volume=BEEP_VOLUMES[option])

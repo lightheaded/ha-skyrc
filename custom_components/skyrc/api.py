@@ -22,6 +22,8 @@ from .const import (
     CHAR_UUID,
     CMD_QUERY_BASIC_INFO,
     CMD_QUERY_CHANNEL_STATUS,
+    CMD_QUERY_SYSTEM_INFO,
+    CMD_SET_SYSTEM_INFO,
     CMD_START_CHARGE,
     CMD_STOP_CHARGE,
     DEFAULT_PASSWORD,
@@ -34,15 +36,23 @@ from .programs import ProgramConfig
 from .protocol import (
     ChannelBasicInfo,
     ChannelStatus,
+    ChargerSettings,
     Frame,
     FrameReader,
     build_basic_info_query,
     build_channel_query,
+    build_set_capacity_limit,
+    build_set_max_input_power,
+    build_set_min_input_voltage,
+    build_set_safety_timer,
+    build_set_sounds,
     build_start_charge,
     build_stop_charge,
+    build_system_info_query,
     parse_ack,
     parse_basic_info,
     parse_channel_status,
+    parse_system_info,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -62,6 +72,9 @@ STOP_CONFIRM_DELAY = 1.0
 # connection is lost — which, polling channels in order, quietly cost channel A
 # its reading on every cycle.
 NOTIFY_SETTLE = 0.5
+
+# Let a settings write land before the next frame.
+SETTING_APPLY_DELAY = 0.4
 
 # Give up on basic-info queries after this many consecutive timeouts, so a
 # charger that never answers them doesn't stall every poll cycle.
@@ -97,6 +110,8 @@ class SkyRcClient:
         self._commanded: dict[str, tuple[str, str]] = {}
         # Last elapsed duration seen per channel, to spot a new run.
         self._durations: dict[str, int] = {}
+        # The charger's own settings, refreshed on every poll.
+        self.settings: ChargerSettings | None = None
 
     def _notification_handler(self, _sender: int, data: bytearray) -> None:
         _LOGGER.debug("%s: notify <- %s", self._address, data.hex())
@@ -255,8 +270,19 @@ class SkyRcClient:
             return None
         return parse_channel_status(frame.data)
 
+    async def _read_settings(self, client: BleakClient) -> ChargerSettings | None:
+        """Read the charger's own settings; ``None`` if it did not answer."""
+        try:
+            frame = await self._query(
+                client, CMD_QUERY_SYSTEM_INFO, build_system_info_query()
+            )
+        except asyncio.TimeoutError:
+            _LOGGER.debug("%s: no system-info reply", self._address)
+            return None
+        return parse_system_info(frame.data)
+
     async def async_poll(self, ble_device: BLEDevice) -> dict[str, ChannelStatus]:
-        """Connect, read all four channels, and disconnect."""
+        """Connect, read all four channels and the charger settings, disconnect."""
         async with self._session(ble_device) as client:
             results: dict[str, ChannelStatus] = {}
             for mask in CHANNEL_MASKS.values():
@@ -270,7 +296,73 @@ class SkyRcClient:
                     "Charger connected but returned no channel data "
                     "(a channel password may be enabled in the SkyCharger app)"
                 )
+            # One query for the lot: the settings are global.
+            self.settings = await self._read_settings(client)
             return results
+
+    async def async_write_settings(
+        self, ble_device: BLEDevice, changes: dict[str, object]
+    ) -> ChargerSettings | None:
+        """Apply ``changes`` to the charger's settings and read them back.
+
+        Settings that share a frame (a limit and its enable flag, the two beep
+        bytes) are sent together, filling in the unchanged half from what the
+        charger currently reports. The charger stores whatever it is given —
+        65535-minute timers and 2550 W power caps were all accepted — so values
+        are expected to have been range-checked by the caller.
+        """
+        current = self.settings
+        if current is None:
+            raise SkyRcError(
+                "Charger settings have not been read yet; try again after the "
+                "next update"
+            )
+
+        def value(name: str) -> object:
+            return changes.get(name, getattr(current, name))
+
+        frames: list[bytes] = []
+        if {"safety_timer_enabled", "safety_timer_minutes"} & changes.keys():
+            frames.append(
+                build_set_safety_timer(
+                    bool(value("safety_timer_enabled")),
+                    int(value("safety_timer_minutes")),  # type: ignore[arg-type]
+                )
+            )
+        if {"capacity_limit_enabled", "capacity_limit_mah"} & changes.keys():
+            frames.append(
+                build_set_capacity_limit(
+                    bool(value("capacity_limit_enabled")),
+                    int(value("capacity_limit_mah")),  # type: ignore[arg-type]
+                )
+            )
+        if {"beep_volume", "completion_beep"} & changes.keys():
+            frames.append(
+                build_set_sounds(
+                    int(value("beep_volume")),  # type: ignore[arg-type]
+                    bool(value("completion_beep")),
+                )
+            )
+        if "min_input_voltage_mv" in changes:
+            frames.append(
+                build_set_min_input_voltage(int(value("min_input_voltage_mv")))  # type: ignore[arg-type]
+            )
+        if "max_input_power_w" in changes:
+            frames.append(
+                build_set_max_input_power(int(value("max_input_power_w")))  # type: ignore[arg-type]
+            )
+
+        async with self._session(ble_device) as client:
+            for frame in frames:
+                try:
+                    await self._query(client, CMD_SET_SYSTEM_INFO, frame)
+                except asyncio.TimeoutError as err:
+                    raise SkyRcError(
+                        "Charger did not acknowledge a settings change"
+                    ) from err
+                await asyncio.sleep(SETTING_APPLY_DELAY)
+            self.settings = await self._read_settings(client)
+        return self.settings
 
     @staticmethod
     def _raise_if_busy(status: ChannelStatus | None, channel: str) -> None:

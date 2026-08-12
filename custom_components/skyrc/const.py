@@ -21,10 +21,29 @@ FRAME_START: Final = 0x0F
 
 # Commands.
 CMD_START_CHARGE: Final = 0x05
+CMD_SET_SYSTEM_INFO: Final = 0x11
 CMD_QUERY_CHANNEL_STATUS: Final = 0x55
 CMD_INFO: Final = 0x57
+CMD_QUERY_SYSTEM_INFO: Final = 0x5A
 CMD_QUERY_BASIC_INFO: Final = 0x5F
 CMD_STOP_CHARGE: Final = 0xFE
+
+# SET_SYSTEM_INFO setting codes. Only the ones the charger reports back through
+# QUERY_SYSTEM_INFO are used: a setting that cannot be read cannot be confirmed
+# written, and this charger acknowledges either way. RESET (0x15) and the DC
+# ones (0x08-0x0B, power-supply mode) are deliberately absent.
+SETTING_SAFETY_TIMER: Final = 0x01
+SETTING_CAPACITY: Final = 0x02
+SETTING_SOUND: Final = 0x03
+SETTING_MIN_INPUT_VOLTAGE: Final = 0x04
+SETTING_MAX_INPUT_POWER: Final = 0x07
+
+# Max. Input Power is reported and set in units of ten watts.
+POWER_STEP_W: Final = 10
+
+# Charger settings are global despite the per-channel argument: writing one on
+# channel A changes what every channel reports. Use one channel for all of them.
+SETTINGS_MASK: Final = 0x01
 
 # Channel password digits sent with QUERY_BASIC_INFO. "0000" is the factory
 # default and the value the SkyCharger app starts from.

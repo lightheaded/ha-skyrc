@@ -175,6 +175,38 @@ SETTING** menu shows what Home Assistant sent. The staged values in Home
 Assistant are separate from that and survive a restart; they are not read back
 from the charger, so the two can differ until you press start.
 
+## Charger settings
+
+The charger's own settings — the ones behind **Task Parameters** and **System
+Settings** on its front panel — are readable and writable too. They are global,
+not per channel, so there is one of each:
+
+| Entity | Charger menu | Range |
+|---|---|---|
+| `switch.…_safety_timer_cut_off` | Task Parameters ▸ Safety Timer | on/off |
+| `number.…_safety_timer` | | 1–999 min |
+| `switch.…_capacity_cut_off` | Task Parameters ▸ Max. Capacity | on/off |
+| `number.…_capacity_limit` | | 100–50000 mAh |
+| `number.…_minimum_input_voltage` | System Settings ▸ Min. Input Voltage | 10.0–30.0 V |
+| `number.…_maximum_input_power` | System Settings ▸ Max. Input Power | 10–400 W |
+| `select.…_beep_volume` | System Settings ▸ Volume | off / low / high |
+| `switch.…_completion_beep` | System Settings ▸ Completion Signal | on/off |
+
+The two cut-offs are the charger's own safety net, and the reason they are
+worth having in Home Assistant: a safety timer and a capacity limit are what
+stop a run that has gone wrong while nobody is watching. They are enabled from
+the factory and worth leaving that way.
+
+The ranges above are the *documented* ones, not the charger's own — it stores
+whatever it is sent, including a 65535-minute timer and a 2550 W power cap, so
+the bounds are enforced here. Input voltage and power limits come from the
+Q200neo specification (DC input 10.0–30.0 V; 200 W on AC, 400 W on DC).
+
+Settings the charger acknowledges but never reports back — LCD backlight,
+warning, sleep time, temperature and balance — are deliberately **not** exposed.
+A write that cannot be read back cannot be confirmed, or undone with any
+confidence. See [PROTOCOL.md](PROTOCOL.md) if you want the detail.
+
 ## Notify when a channel finishes
 
 The integration deliberately ships **no** notification logic — wire it up with a

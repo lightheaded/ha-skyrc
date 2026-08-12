@@ -35,6 +35,12 @@ build_command = protocol.build_command
 parse_basic_info = protocol.parse_basic_info
 parse_channel_status = protocol.parse_channel_status
 build_start_charge = protocol.build_start_charge
+build_set_safety_timer = protocol.build_set_safety_timer
+build_set_capacity_limit = protocol.build_set_capacity_limit
+build_set_min_input_voltage = protocol.build_set_min_input_voltage
+build_set_max_input_power = protocol.build_set_max_input_power
+build_set_sounds = protocol.build_set_sounds
+parse_system_info = protocol.parse_system_info
 build_stop_charge = protocol.build_stop_charge
 parse_ack = protocol.parse_ack
 
@@ -360,3 +366,55 @@ def test_parse_ack():
     assert parse_ack(bytes([0x01, 0x01])) == (0x01, 0x01)
     assert parse_ack(bytes([0x04, 0x00])) == (0x04, 0x00)
     assert parse_ack(b"\x01") is None
+
+
+# --- charger settings -----------------------------------------------------
+#
+# The payload below is a real QUERY_SYSTEM_INFO reply from a Q200neo whose menus
+# read: Safety Timer 240 Minute, Max. Capacity 12000 mAh, Min. Input Voltage
+# 11.0V, Max. Input Power 200W.
+SYSTEM_INFO = bytes.fromhex(
+    "010a0100f0012ee00101 2af80014 00 000000080007000000000009000900000000 0000".replace(" ", "")
+)
+
+
+def test_parse_system_info_matches_the_charger_menus():
+    settings = parse_system_info(SYSTEM_INFO)
+    assert settings is not None
+    assert settings.safety_timer_enabled is True
+    assert settings.safety_timer_minutes == 240
+    assert settings.capacity_limit_enabled is True
+    assert settings.capacity_limit_mah == 12000
+    assert settings.min_input_voltage_mv == 11000
+    assert settings.max_input_power_w == 200
+    assert settings.beep_volume == 1
+    assert settings.completion_beep is True
+
+
+def test_parse_system_info_needs_a_full_payload():
+    assert parse_system_info(SYSTEM_INFO[:10]) is None
+
+
+def test_build_set_safety_timer():
+    args = _decode_args(build_set_safety_timer(True, 180))
+    assert args == bytes([0x01, 0x01, 0x01, 0x00, 180])
+
+
+def test_build_set_capacity_limit():
+    args = _decode_args(build_set_capacity_limit(True, 10000))
+    assert args == bytes([0x01, 0x02, 0x01, 0x27, 0x10])
+
+
+def test_build_set_min_input_voltage():
+    args = _decode_args(build_set_min_input_voltage(10500))
+    assert args == bytes([0x01, 0x04, 0x29, 0x04, 0x00])
+
+
+def test_build_set_max_input_power_uses_ten_watt_units():
+    args = _decode_args(build_set_max_input_power(200))
+    assert args == bytes([0x01, 0x07, 20, 0x00, 0x00])
+
+
+def test_build_set_sounds_writes_both_bytes():
+    args = _decode_args(build_set_sounds(2, False))
+    assert args == bytes([0x01, 0x03, 2, 0, 0x00])
