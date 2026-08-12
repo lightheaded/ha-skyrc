@@ -57,12 +57,8 @@ answered**: `INFO` (`0x57`, with the app's fixed 17-byte argument),
 `QUERY_SYSTEM_SETTING` (`0x96`) and `QUERY_DC_STATUS` (`0x75`).
 
 Answered but not currently used: `QUERY_VOLTAGE_INFO` (`0x58`, per-cell voltage
-and resistance, all zero with no pack attached) and `QUERY_SYSTEM_INFO`
-(`0x5A`). The `0x5A` payload parses as the charger's own settings menus and was
-checked against them: `d[3..4]` safety timer in minutes (240), `d[6..7]` maximum
-capacity in mAh (12000), `d[10..11]` minimum input voltage in mV (11000),
-`d[1]` recycle, `d[8]`/`d[9]` key and system beep, `d[12]` balance, `d[13]`
-maximum input power.
+and resistance, all zero with no pack attached), `QUERY_SYSTEM_INFO` (`0x5A`)
+and `SET_SYSTEM_INFO` (`0x11`) — see below.
 
 ## Channel status payload (`d[...]` = bytes after the command echo)
 
@@ -197,6 +193,39 @@ So limits have to be enforced by the client. This integration keeps the ranges
 the SkyCharger app enforces for the Q200neo in `programs.py` and refuses to
 build a frame outside them.
 
+## Charger settings (`0x5A` / `0x11`)
+
+`QUERY_SYSTEM_INFO` (`0x5A`, one argument: the channel mask) reports the
+charger's own settings. `SET_SYSTEM_INFO` (`0x11`) writes one of them:
+`[mask] [setting] [b1] [b2] [b3]`, replying `[mask] [0x01]`.
+
+**The settings are global, not per-channel.** Writing the safety timer to
+channel A changed what channel B reported, so the channel argument is
+decorative. All four channels return the same values.
+
+Mapped empirically on a Q200neo — write one setting, diff the `0x5A` payload,
+write the old value back — and cross-checked against the charger's own menus:
+
+| Setting | `0x11` | Argument bytes | `0x5A` offset | Menu item |
+|---|---|---|---|---|
+| Recycle | `0x00` | value | d[1] | — |
+| Safety timer | `0x01` | enable, minutes u16 BE | d[2], d[3..4] | Task Parameters ▸ Safety Timer |
+| Max capacity | `0x02` | enable, mAh u16 BE | d[5], d[6..7] | Task Parameters ▸ Max. Capacity |
+| Beeps | `0x03` | key beep, system beep | d[8], d[9] | System Settings ▸ Volume |
+| Min input voltage | `0x04` | mV u16 BE | d[10..11] | System Settings ▸ Min. Input Voltage |
+| Max input power | `0x07` | value (×10 W) | d[13] | System Settings ▸ Max. Input Power |
+
+Acknowledged but with **no observable effect** on this firmware: temperature
+(`0x05`), balance (`0x06`), LCD backlight (`0x10`), warning (`0x11`) and sleep
+time (`0x12`). The reference app reads those from payload offsets 33-40, which
+only exist on payloads of 37 bytes or more; this charger returns 35, so either
+the firmware ignores them or it keeps them somewhere `0x5A` does not report.
+Since the acknowledgement is identical either way, **do not write a setting you
+cannot read back** — there is no way to confirm the old value was restored.
+
+Not tried, deliberately: `RESET` (`0x15`), which restores factory settings, and
+the DC ones (`0x08`-`0x0B`), which switch the charger into power-supply mode.
+
 <a name="passwords"></a>
 
 ## Passwords
@@ -258,9 +287,9 @@ client stops asking after three timeouts and the direction falls back to
 - The Q200neo offers AGM and Cold charge programs for lead-acid packs, and a
   Pb AGM battery type. The reference app has no program byte for either, so they
   are left out rather than guessed at.
-- `SET_SYSTEM_INFO` (`0x11`) would set the safety timer, capacity cut-off,
-  beeps and input limits that `0x5A` reports. Untried: it writes settings the
-  charger keeps, so it wants care and a way to put them back.
+- `SET_SYSTEM_INFO` (`0x11`) is mapped and works (see above) but is not yet
+  exposed as entities. Five of its settings acknowledge without any readable
+  effect and are best left alone until a charger reports them.
 - The device identifies itself as ASCII `100197` in the reference app's device
   table, matching the product code, but the `INFO` command that would return it
   is not answered.
