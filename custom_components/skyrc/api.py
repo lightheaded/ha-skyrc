@@ -25,7 +25,7 @@ from .const import (
     CMD_START_CHARGE,
     CMD_STOP_CHARGE,
     DEFAULT_PASSWORD,
-    STATE_DONE,
+    STATE_DC_SUPPLY,
     STATE_IDLE,
     STATE_READY,
     STATE_WORKING,
@@ -95,6 +95,8 @@ class SkyRcClient:
         # for reporting charge/discharge direction when the charger's own
         # basic info is unavailable or not being polled.
         self._commanded: dict[str, tuple[str, str]] = {}
+        # Last elapsed duration seen per channel, to spot a new run.
+        self._durations: dict[str, int] = {}
 
     def _notification_handler(self, _sender: int, data: bytearray) -> None:
         _LOGGER.debug("%s: notify <- %s", self._address, data.hex())
@@ -207,12 +209,25 @@ class SkyRcClient:
         if status.state in (STATE_IDLE, STATE_READY):
             self._basic_info.pop(channel, None)
             self._commanded.pop(channel, None)
+            self._durations.pop(channel, None)
             return
 
-        if self._poll_program and (
-            status.state == STATE_WORKING
-            or (status.state == STATE_DONE and channel not in self._basic_info)
-        ):
+        # A channel's program cannot change without it passing through idle,
+        # which clears the cache above — except when a whole run ends and
+        # another starts between two polls, which shows up as the elapsed
+        # duration going backwards. So ask once per run, not once per poll:
+        # this query is the one that carries the passcode, and chargers that
+        # want a passcode put a prompt on their display every time it arrives.
+        previous = self._durations.get(channel)
+        restarted = (
+            status.duration_s is not None
+            and previous is not None
+            and status.duration_s < previous
+        )
+        if status.duration_s is not None:
+            self._durations[channel] = status.duration_s
+
+        if self._poll_program and (channel not in self._basic_info or restarted):
             info = await self._query_basic_info(client, status.mask)
             if info is not None:
                 self._basic_info[channel] = info
@@ -257,6 +272,15 @@ class SkyRcClient:
                 )
             return results
 
+    @staticmethod
+    def _raise_if_busy(status: ChannelStatus | None, channel: str) -> None:
+        """Refuse to start a channel that is already running something."""
+        if status is not None and status.state in (STATE_WORKING, STATE_DC_SUPPLY):
+            raise SkyRcError(
+                f"Channel {channel} is already running ({status.detailed_state}); "
+                "stop it before starting a new program"
+            )
+
     async def async_start_program(
         self, ble_device: BLEDevice, channel: str, config: ProgramConfig
     ) -> ChannelStatus | None:
@@ -270,11 +294,19 @@ class SkyRcClient:
         """
         mask = CHANNEL_MASKS[channel]
         async with self._session(ble_device) as client:
+            # A busy channel ignores a start frame outright — no reply at all,
+            # where an idle one always acknowledges. Check first so the failure
+            # says what is wrong instead of timing out.
+            self._raise_if_busy(await self._read_channel(client, mask), channel)
+
             try:
                 frame = await self._query(
                     client, CMD_START_CHARGE, build_start_charge(mask, config)
                 )
             except asyncio.TimeoutError as err:
+                # Started from the charger's own panel in the meantime, most
+                # likely; otherwise the charger simply did not answer.
+                self._raise_if_busy(await self._read_channel(client, mask), channel)
                 raise SkyRcError(
                     f"Charger did not acknowledge the start of channel {channel}"
                 ) from err

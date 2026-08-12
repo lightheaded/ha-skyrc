@@ -163,6 +163,11 @@ the range for that pack. If the charger takes the frame and then refuses to act
 on it, the call fails too: the channel is checked afterwards, and one still idle
 means refused.
 
+A channel that is already running has to be **stopped first**; the charger
+ignores a start sent to a busy channel outright, so the call fails with
+`Channel A is already running`. That applies to runs started from the charger's
+own panel too.
+
 ### What the charger does with it
 
 The charger keeps the last program a channel ran, so the physical **CHARGE
@@ -270,20 +275,26 @@ reported even when the charger's own program query is unavailable or turned off.
 
 Some chargers show `PASSCODE: XXXX` on their own display while Home Assistant is
 polling. It does not affect the readings, and it does not block starting or
-stopping a channel.
+stopping a channel — but it is persistent enough to make the charger's own front
+panel awkward to use.
 
 The likely cause is the query that carries the passcode digits: the charger is
 showing the code for someone standing at it to type into the SkyCharger app.
 Only that one query is involved, and only when the digits sent do not match.
-**Settings → Devices & Services → SkyRC Charger → Configure** has two ways to
-deal with it:
+
+Most of the persistence was this integration's fault and is fixed: that query
+used to go out for every running channel on **every poll**, raising a fresh
+prompt every 30 seconds. It now runs **once per run** — the program cannot
+change without the channel passing through idle. If a prompt once per charge is
+still one too many, **Settings → Devices & Services → SkyRC Charger →
+Configure** has two more ways to deal with it:
 
 | Option | Effect |
 |---|---|
 | **Passcode** | The four digits set in the SkyCharger app. Sent with the query, so the charger accepts it instead of prompting. |
 | **Read the program of a running channel** | Turn it off and that query is never sent at all. The cost is charge-vs-discharge for runs the integration did not start itself — those channels read `working`. |
 
-This explanation is not yet confirmed against a display — if you can watch the
+The explanation itself is not yet proven against a display — if you can watch a
 charger while Home Assistant polls it, a note on
 [the discussion thread](https://community.home-assistant.io/t/skyrc-charger-ble-per-channel-monitoring-charging-done-notifications/1016445)
 would settle it.

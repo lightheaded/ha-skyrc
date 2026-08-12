@@ -164,6 +164,14 @@ limit that had been sent.
 The last program stays readable through `0x5F` after the channel goes back to
 idle, so a channel's staged configuration survives a stop.
 
+### A busy channel ignores it outright
+
+START_CHARGE sent to a channel that is already working gets **no reply at all** —
+not a refusal, silence. (An idle channel always acknowledges, even when it goes
+on to refuse the program.) So a channel has to be stopped before a new program
+can be started on it, and a start that goes unanswered is worth re-reading the
+channel status over: working means busy, not broken.
+
 ### The reply is an acknowledgement, not a result
 
 `[mask] [byte]`, where the second byte was `0x00` for every START_CHARGE
@@ -207,13 +215,23 @@ passcode.
 
 ### The passcode prompt on the display
 
-A user reports the charger showing `PASSCODE: XXXX` on its own screen while Home
-Assistant is polling, without it affecting the readings. The likely mechanism:
-`0x5F` arrives with digits the charger does not accept (`d[9] = 0`), so the
-charger displays the code for whoever is standing at it to type into the app.
-That fits the app's flow, and `0x5F` is the only command in play that carries
-passcode digits. **Unconfirmed** — it needs someone watching the display while a
-client sends nothing but `0x55`.
+Two Q200neos show `PASSCODE: XXXX` on their own screen while a client is
+polling. It does not affect the readings, and it does not stop START_CHARGE or
+STOP_CHARGE. It is persistent enough to make the charger's own front panel hard
+to operate.
+
+The likely mechanism: `0x5F` arrives with digits the charger does not accept
+(`d[9] = 0`), so the charger displays the code for whoever is standing at it to
+type into the app. That fits the app's flow, and `0x5F` is the only command in
+play that carries passcode digits. Still **not proven** against the display —
+that needs someone watching one while a client sends nothing but `0x55`.
+
+What made it *persistent* was on the client side: this integration re-sent
+`0x5F` for every working channel on every poll, so a prompt was raised every 30
+seconds. A channel's program cannot change without it passing through idle, so
+the query now runs once per run — a run that both starts and ends between two
+polls is caught by the elapsed duration going backwards. Measured over three
+consecutive polls of a charging channel: one `0x5F`, twelve `0x55`.
 
 There is no passcode item anywhere in the charger's own menu tree (checked
 against the V1.2 manual: System Settings, Task Parameters, Factory Settings,
