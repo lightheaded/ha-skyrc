@@ -27,8 +27,10 @@ for _name in ("const", "protocol"):
 
 protocol = sys.modules["_skyrc.protocol"]
 FrameReader = protocol.FrameReader
+build_basic_info_query = protocol.build_basic_info_query
 build_channel_query = protocol.build_channel_query
 build_command = protocol.build_command
+parse_basic_info = protocol.parse_basic_info
 parse_channel_status = protocol.parse_channel_status
 
 
@@ -126,6 +128,86 @@ def test_live_frame_channel_c_done():
     assert status.internal_temp_c == 31
     assert status.battery_temp_c is None  # no external probe attached
     assert status.cell_voltages_mv == [4187, 4191]  # noise bytes filtered out
+
+
+def _basic_info(
+    mask=0x01, state=0x01, battery_type=0x00, cells=3, program=0x00, password=0
+):
+    return bytes(
+        [
+            mask,
+            state,
+            battery_type,
+            cells,
+            program,
+            0x14,  # charge max 2000 mA
+            0x0A,  # discharge max 1000 mA
+            0x01,  # version major
+            0x23,  # version minor
+            password,
+        ]
+    )
+
+
+def test_build_basic_info_query_sends_password_digits():
+    # 0x5F, channel A, password "0000"; checksum = 0x5F + 0x01.
+    assert build_basic_info_query(0x01) == bytes.fromhex("0F075F010000000060")
+
+
+def test_parse_basic_info_lithium_discharge():
+    info = parse_basic_info(_basic_info(battery_type=0x00, program=0x02))
+    assert info is not None
+    assert info.channel == "A"
+    assert info.battery_type == "lipo"
+    assert info.chemistry == "lithium"
+    assert info.cell_count == 3
+    assert info.program == "discharge"
+    assert info.password_required is False
+
+
+def test_parse_basic_info_nickel_program_codes_differ():
+    # 0x04 is "cycle" for nickel but "fast charge" for lithium.
+    nickel = parse_basic_info(_basic_info(battery_type=0x04, program=0x04))
+    lithium = parse_basic_info(_basic_info(battery_type=0x00, program=0x04))
+    assert nickel.battery_type == "nimh"
+    assert nickel.program == "cycle"
+    assert lithium.program == "fast_charge"
+
+
+def test_parse_basic_info_unknown_battery_type():
+    info = parse_basic_info(_basic_info(battery_type=0x7F, program=0x02))
+    assert info.battery_type is None
+    assert info.program is None  # program codes are meaningless without chemistry
+
+
+def test_parse_basic_info_password_flag_and_short_payload():
+    assert parse_basic_info(_basic_info(password=1)).password_required is True
+    assert parse_basic_info(_basic_info()[:9]) is None
+
+
+def _working_status(program=None):
+    status = parse_channel_status(bytes([0x01, 0x01, 0x00, 0x00, 0x00, 0x00]))
+    status.program = program
+    return status
+
+
+def test_detailed_state_splits_working_by_program():
+    assert _working_status("balance_charge").detailed_state == "charging"
+    assert _working_status("fast_charge").detailed_state == "charging"
+    assert _working_status("discharge").detailed_state == "discharging"
+
+
+def test_detailed_state_falls_back_when_direction_is_ambiguous():
+    # Storage and cycle run either way; an unread program is unknown.
+    assert _working_status("storage").detailed_state == "working"
+    assert _working_status("cycle").detailed_state == "working"
+    assert _working_status(None).detailed_state == "working"
+
+
+def test_detailed_state_only_refines_the_working_state():
+    status = parse_channel_status(bytes([0x01, 0x03, 0x00, 0x00, 0x00, 0x00]))
+    status.program = "discharge"
+    assert status.detailed_state == "done"
 
 
 def test_bad_checksum_dropped():

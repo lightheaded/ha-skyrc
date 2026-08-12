@@ -34,6 +34,7 @@ Example — query channel A: `0F 03 55 01 56`.
 | Command | Byte | Args |
 |---|---|---|
 | QUERY_CHANNEL_STATUS | `0x55` | channel mask (A=`0x01`, B=`0x02`, C=`0x04`, D=`0x08`) |
+| QUERY_BASIC_INFO | `0x5F` | channel mask + the four password digits as separate bytes (`00 00 00 00` by default) |
 
 ## Channel status payload (`d[...]` = bytes after the command echo)
 
@@ -62,6 +63,40 @@ Example — query channel A: `0F 03 55 01 56`.
 | 0x05 | Ready |
 | 0x06 | Standby (unknown) |
 | 0x07 | DC power supply mode |
+
+The working state does **not** say which way the current flows — charging and
+discharging both report `0x01`. The direction comes from the channel's program
+in the basic-info payload below.
+
+## Channel basic info payload (`0x5F`)
+
+| Offset | Field | Notes |
+|---|---|---|
+| d[0] | channel mask | |
+| d[1] | working state | as above |
+| d[2] | battery type | `0x00` LiPo, `0x01` Li-ion, `0x02` LiFe, `0x03` LiHV, `0x04` NiMH, `0x05` NiCd, `0x06` Pb, `0x07` Pb AGM |
+| d[3] | cell count | as configured, not as measured |
+| d[4] | program | see below |
+| d[5] | charge current limit | ×100 mA |
+| d[6] | discharge current limit | ×100 mA |
+| d[7], d[8] | firmware version | major, minor |
+| d[9] | password set | `1` = the channel requires `VERIFY_PASSWORD` |
+
+### Programs (`d[4]`)
+
+The codes are reused per chemistry, so `d[4]` only has meaning together with
+the battery type in `d[2]`:
+
+| Value | Lithium | Nickel | Lead acid |
+|---|---|---|---|
+| 0x00 | Balance charge | Charge | Charge |
+| 0x01 | Charge | Auto charge | Discharge |
+| 0x02 | Discharge | Discharge | — |
+| 0x03 | Storage | Re-peak | — |
+| 0x04 | Fast charge | Cycle | — |
+
+Storage and cycle programs charge *or* discharge depending on the pack, so
+this integration reports them as plain `working`.
 
 ## Notes / open items
 

@@ -19,13 +19,23 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from .const import (
+    BATTERY_CHEMISTRY,
+    BATTERY_TYPE_NAMES,
+    CHARGE_PROGRAMS,
+    CMD_QUERY_BASIC_INFO,
     CMD_QUERY_CHANNEL_STATUS,
+    DEFAULT_PASSWORD,
+    DISCHARGE_PROGRAMS,
     FRAME_START,
     INVALID_U16,
     MASK_TO_CHANNEL,
+    PROGRAM_NAMES,
+    STATE_CHARGING,
+    STATE_DISCHARGING,
     STATE_DONE,
     STATE_ERROR,
     STATE_NAMES,
+    STATE_WORKING,
 )
 
 # Plausible per-cell voltage window (mV): NiMH ~1.0 V up to LiPo ~4.3 V.
@@ -44,6 +54,16 @@ def build_command(command: int, args: bytes = b"") -> bytes:
 def build_channel_query(mask: int) -> bytes:
     """Build a QUERY_CHANNEL_STATUS frame for the given channel ``mask``."""
     return build_command(CMD_QUERY_CHANNEL_STATUS, bytes([mask]))
+
+
+def build_basic_info_query(mask: int, password: str = DEFAULT_PASSWORD) -> bytes:
+    """Build a QUERY_BASIC_INFO frame for the given channel ``mask``.
+
+    The four password digits are sent as separate bytes, as the SkyCharger app
+    does; they are ignored by chargers with no channel password set.
+    """
+    digits = bytes(int(d) for d in password[:4])
+    return build_command(CMD_QUERY_BASIC_INFO, bytes([mask]) + digits)
 
 
 @dataclass
@@ -142,6 +162,9 @@ class ChannelStatus:
     system_error: int | None = None
     charge_error: int | None = None
     raw: str = ""
+    # From the channel's basic info (QUERY_BASIC_INFO), when available.
+    battery_type: str | None = None
+    program: str | None = None
 
     @property
     def is_done(self) -> bool:
@@ -150,6 +173,22 @@ class ChannelStatus:
     @property
     def is_error(self) -> bool:
         return self.state == STATE_ERROR
+
+    @property
+    def detailed_state(self) -> str:
+        """State name refined with the charge/discharge direction.
+
+        The charger reports one "working" state for both directions; the
+        program tells them apart. Programs that can run either way (storage,
+        cycle) and unknown programs stay "working".
+        """
+        if self.state != STATE_WORKING or self.program is None:
+            return self.state_name
+        if self.program in DISCHARGE_PROGRAMS:
+            return STATE_DISCHARGING
+        if self.program in CHARGE_PROGRAMS:
+            return STATE_CHARGING
+        return self.state_name
 
 
 def parse_channel_status(data: bytes) -> ChannelStatus | None:
@@ -198,3 +237,47 @@ def parse_channel_status(data: bytes) -> ChannelStatus | None:
     status.cell_voltages_mv = cells
 
     return status
+
+
+@dataclass
+class ChannelBasicInfo:
+    """Parsed per-channel basic info (``parseBasicInfo``).
+
+    Carries the configured battery type and program — the only place the
+    protocol says whether a working channel is charging or discharging.
+    """
+
+    mask: int
+    channel: str
+    state: int
+    battery_type: str | None = None
+    chemistry: str | None = None
+    cell_count: int | None = None
+    program: str | None = None
+    password_required: bool = False
+    raw: str = ""
+
+
+def parse_basic_info(data: bytes) -> ChannelBasicInfo | None:
+    """Parse a QUERY_BASIC_INFO payload (bytes after the command echo)."""
+    if len(data) < 10:
+        return None
+
+    mask = data[0]
+    battery_code = data[2]
+    chemistry = BATTERY_CHEMISTRY.get(battery_code)
+    program_code = data[4]
+
+    return ChannelBasicInfo(
+        mask=mask,
+        channel=MASK_TO_CHANNEL.get(mask, f"0x{mask:02X}"),
+        state=data[1],
+        battery_type=BATTERY_TYPE_NAMES.get(battery_code),
+        chemistry=chemistry,
+        cell_count=data[3],
+        program=PROGRAM_NAMES.get(chemistry, {}).get(program_code)
+        if chemistry
+        else None,
+        password_required=data[9] == 1,
+        raw=data.hex(),
+    )

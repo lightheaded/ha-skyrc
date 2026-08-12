@@ -22,6 +22,8 @@
       "status": {
         "name": "Channel {channel} status",
         "state": {
+          "charging": "Charging",
+          "discharging": "Discharging",
           "working": "Working",
           "idle": "Idle",
           "done": "Done",
@@ -38,9 +40,6 @@
       "duration": { "name": "Channel {channel} duration" },
       "battery_temp": { "name": "Channel {channel} battery temperature" },
       "charger_temp": { "name": "Charger temperature" }
-    },
-    "binary_sensor": {
-      "charging": { "name": "Channel {channel} charging" }
     }
   }
 }
