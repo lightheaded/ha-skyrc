@@ -121,6 +121,8 @@ Each channel gets a staged program, then two buttons:
 | `button.…_channel_a_start` | runs the staged program |
 | `button.…_channel_a_stop` | stops the channel, and clears a latched error |
 
+<img width="620" alt="Controls card on the Home Assistant device page: start and stop buttons for channels A to D, next to the activity log of the channel status sensors" src="https://raw.githubusercontent.com/lightheaded/ha-skyrc/master/images/controls.png" />
+
 Ranges follow the charger: they change with the battery type and program, and a
 parameter the program does not use (a discharge current on a plain charge, say)
 reports unavailable rather than pretending to matter. Nickel packs also get a
@@ -191,6 +193,8 @@ not per channel, so there is one of each:
 | `number.…_maximum_input_power` | System Settings ▸ Max. Input Power | 10–400 W |
 | `select.…_beep_volume` | System Settings ▸ Volume | off / low / high |
 | `switch.…_completion_beep` | System Settings ▸ Completion Signal | on/off |
+
+<img width="400" alt="Configuration card on the Home Assistant device page: beep volume, capacity cut-off and capacity limit for the charger, then the staged program for channel A — LiPo, 3 cells, 100 mA, 4200 mV, balance charge — with the discharge current and voltage greyed out because the program does not use them" src="https://raw.githubusercontent.com/lightheaded/ha-skyrc/master/images/program-settings.png" />
 
 The two cut-offs are the charger's own safety net, and the reason they are
 worth having in Home Assistant: a safety timer and a capacity limit are what
