@@ -17,6 +17,21 @@
       "no_devices_found": "No SkyRC chargers found in Bluetooth range. Make sure the charger is powered on and near a Bluetooth adapter or proxy."
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Charger options",
+        "data": {
+          "passcode": "Passcode",
+          "poll_program": "Read the program of a running channel"
+        },
+        "data_description": {
+          "passcode": "The four-digit passcode set in the SkyCharger app. Leave it at 0000 if you have not set one.",
+          "poll_program": "Reads each running channel's battery type and program, which is what tells charging apart from discharging. Turn it off if your charger shows a passcode prompt on its display while Home Assistant is polling it."
+        }
+      }
+    }
+  },
   "entity": {
     "sensor": {
       "status": {
@@ -40,6 +55,134 @@
       "duration": { "name": "Channel {channel} duration" },
       "battery_temp": { "name": "Channel {channel} battery temperature" },
       "charger_temp": { "name": "Charger temperature" }
+    },
+    "select": {
+      "battery_type": {
+        "name": "Channel {channel} battery type",
+        "state": {
+          "lipo": "LiPo",
+          "liion": "Li-ion",
+          "life": "LiFe",
+          "lihv": "LiHV",
+          "nimh": "NiMH",
+          "nicd": "NiCd",
+          "pb": "Lead acid"
+        }
+      },
+      "program": {
+        "name": "Channel {channel} program",
+        "state": {
+          "balance_charge": "Balance charge",
+          "charge": "Charge",
+          "discharge": "Discharge",
+          "storage": "Storage",
+          "re_peak": "Re-peak",
+          "cycle": "Cycle"
+        }
+      },
+      "cycle_order": {
+        "name": "Channel {channel} cycle order",
+        "state": {
+          "charge_discharge": "Charge, then discharge",
+          "discharge_charge": "Discharge, then charge"
+        }
+      }
+    },
+    "number": {
+      "cell_count": { "name": "Channel {channel} cell count" },
+      "charge_current": { "name": "Channel {channel} charge current" },
+      "discharge_current": { "name": "Channel {channel} discharge current" },
+      "charge_voltage": { "name": "Channel {channel} charge voltage per cell" },
+      "discharge_voltage": {
+        "name": "Channel {channel} discharge voltage per cell"
+      },
+      "track_voltage": { "name": "Channel {channel} peak sensitivity" },
+      "cycle_number": { "name": "Channel {channel} cycle count" }
+    },
+    "button": {
+      "start": { "name": "Channel {channel} start" },
+      "stop": { "name": "Channel {channel} stop" }
+    }
+  },
+  "services": {
+    "start_program": {
+      "name": "Start program",
+      "description": "Runs a charge program on one channel. Anything left out is taken from that channel's staged settings, except that naming a different battery type or program starts from that program's defaults.",
+      "fields": {
+        "battery_type": {
+          "name": "Battery type",
+          "description": "Chemistry of the pack on the channel."
+        },
+        "program": {
+          "name": "Program",
+          "description": "What to run. Which programs are valid depends on the battery type."
+        },
+        "cell_count": {
+          "name": "Cell count",
+          "description": "Cells in series: up to 6 for lithium, 15 for nickel, 10 for lead acid."
+        },
+        "charge_current": {
+          "name": "Charge current",
+          "description": "Charge current in mA."
+        },
+        "discharge_current": {
+          "name": "Discharge current",
+          "description": "Discharge current in mA."
+        },
+        "charge_voltage": {
+          "name": "Charge voltage per cell",
+          "description": "Target charge voltage per cell, in mV. The charger's own 'Condition' setting."
+        },
+        "discharge_voltage": {
+          "name": "Discharge voltage per cell",
+          "description": "Cut-off voltage per cell, in mV. For a storage program this is the storage target."
+        },
+        "track_voltage": {
+          "name": "Peak sensitivity",
+          "description": "Delta-peak detection threshold in mV, for nickel packs only."
+        },
+        "cycle_number": {
+          "name": "Cycle count",
+          "description": "How many charge/discharge cycles to run, for a nickel cycle program."
+        },
+        "cycle_order": {
+          "name": "Cycle order",
+          "description": "Whether a cycle program charges first or discharges first."
+        },
+        "repeak_number": {
+          "name": "Re-peak count",
+          "description": "How many times to re-peak a nickel pack."
+        }
+      }
+    }
+  },
+  "selector": {
+    "battery_type": {
+      "options": {
+        "lipo": "LiPo",
+        "liion": "Li-ion",
+        "life": "LiFe",
+        "lihv": "LiHV",
+        "nimh": "NiMH",
+        "nicd": "NiCd",
+        "pb": "Lead acid"
+      }
+    },
+    "program": {
+      "options": {
+        "balance_charge": "Balance charge",
+        "charge": "Charge",
+        "discharge": "Discharge",
+        "storage": "Storage",
+        "re_peak": "Re-peak",
+        "cycle": "Cycle"
+      }
+    },
+    "cycle_order": {
+      "options": {
+        "charge_discharge": "Charge, then discharge",
+        "discharge_charge": "Discharge, then charge"
+      }
     }
   }
 }

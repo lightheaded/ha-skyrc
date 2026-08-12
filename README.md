@@ -3,10 +3,10 @@
 [![Validate](https://github.com/lightheaded/ha-skyrc/actions/workflows/validate.yml/badge.svg)](https://github.com/lightheaded/ha-skyrc/actions/workflows/validate.yml)
 [![hacs](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz)
 
-An **unofficial** custom integration that monitors [SkyRC](https://www.skyrc.com/)
-smart chargers over Bluetooth Low Energy and exposes each channel's state as
-Home Assistant entities — so you can get a push notification the moment a battery
-finishes charging.
+An **unofficial** custom integration that monitors and controls
+[SkyRC](https://www.skyrc.com/) smart chargers over Bluetooth Low Energy — get a
+push notification the moment a battery finishes charging, and start or stop a
+charge program from Home Assistant.
 
 ### Supported chargers
 
@@ -35,6 +35,7 @@ The neo-series BLE protocol is shared across models; the domain is generic
   - Capacity (mAh), Voltage (V), Current (A), Battery temperature (°C)
   - Duration (disabled by default)
 - Charger internal temperature (diagnostic)
+- **Control**: stage a program per channel (battery type, cell count, program, currents, per-cell voltages) and **start** or **stop** it — from the dashboard, or in one call from an automation with `skyrc.start_program`
 - Connect → poll → disconnect cycle that leaves the single BLE slot free for the SkyCharger phone app between polls
 
 ### Example
@@ -63,9 +64,10 @@ the two programs that deliberately stay `working` rather than guess a direction
 - A Bluetooth adapter or ESPHome Bluetooth proxy within range of the charger
 
 A passcode set in the SkyCharger app does **not** need to be removed: on a
-Q200neo with one set, both the status and basic-info queries are answered
-normally and the charger reports no password check. See
-[PROTOCOL.md](PROTOCOL.md) for the one case that would degrade.
+Q200neo with one set, every query is answered and both start and stop are
+carried out. If your charger shows a `PASSCODE` prompt on its display while
+Home Assistant is polling, see [the passcode prompt](#the-passcode-prompt-on-the-charger)
+below.
 
 ## Installation
 
@@ -91,6 +93,82 @@ version you are upgrading to.
 The charger is usually auto-discovered: **Settings → Devices & Services →
 Discovered**. Otherwise add it via **+ Add Integration → SkyRC Charger**
 and pick it from the list of chargers in range.
+
+## Starting and stopping a charge
+
+> [!CAUTION]
+> A charger that can be started remotely can be started when you are not
+> there. The manual is blunt about this — *never leave charging batteries
+> unattended, never charge overnight* — and lithium packs do catch fire. The
+> charger itself checks almost nothing it is sent: a live Q200neo accepted a
+> per-cell charge voltage of 9999 mV without complaint. This integration
+> enforces the same limits as the SkyCharger app, but limits inside the right
+> range are still yours to get right, and a program aimed at the wrong
+> chemistry or cell count will happily run. Think about what an automation of
+> yours could start, and where the charger sits when it does.
+
+Each channel gets a staged program, then two buttons:
+
+| Entity | What it is |
+|---|---|
+| `select.…_channel_a_battery_type` | LiPo, Li-ion, LiFe, LiHV, NiMH, NiCd, lead acid |
+| `select.…_channel_a_program` | the programs that battery type allows — balance charge, charge, discharge, storage, re-peak, cycle |
+| `number.…_channel_a_cell_count` | cells in series (6 lithium, 15 nickel, 10 lead acid) |
+| `number.…_channel_a_charge_current` | mA |
+| `number.…_channel_a_discharge_current` | mA |
+| `number.…_channel_a_charge_voltage_per_cell` | mV — the charger's own "Condition" setting |
+| `number.…_channel_a_discharge_voltage_per_cell` | mV cut-off, or the target for a storage run |
+| `button.…_channel_a_start` | runs the staged program |
+| `button.…_channel_a_stop` | stops the channel, and clears a latched error |
+
+Ranges follow the charger: they change with the battery type and program, and a
+parameter the program does not use (a discharge current on a plain charge, say)
+reports unavailable rather than pretending to matter. Nickel packs also get a
+peak sensitivity, cycle count and cycle order, disabled by default.
+
+Changing the battery type or program resets that program's parameters to the
+charger's defaults, so a half-changed program cannot be left staged.
+
+### From an automation
+
+`skyrc.start_program` runs one program in a single call without touching the
+staged settings. Anything left out comes from the staged program, except that
+naming a different battery type or program starts from that program's defaults —
+so a call only has to state what matters:
+
+```yaml
+alias: SkyRC — storage-charge the flight pack after a session
+triggers:
+  - trigger: state
+    entity_id: input_boolean.flying_done
+    to: "on"
+actions:
+  - action: skyrc.start_program
+    target:
+      entity_id: button.charger_8f12_channel_b_start
+    data:
+      battery_type: liion
+      program: storage
+      cell_count: 6
+      charge_current: 2000
+      discharge_current: 1000
+      discharge_voltage: 3800   # per cell
+```
+
+Stopping is just `button.press` on the channel's stop button.
+
+A program the charger will not accept fails the service call with the reason —
+wrong program for the chemistry, too many cells, a current or voltage outside
+the range for that pack. If the charger takes the frame and then refuses to act
+on it, the call fails too: the channel is checked afterwards, and one still idle
+means refused.
+
+### What the charger does with it
+
+The charger keeps the last program a channel ran, so the physical **CHARGE
+SETTING** menu shows what Home Assistant sent. The staged values in Home
+Assistant are separate from that and survive a restart; they are not read back
+from the charger, so the two can differ until you press start.
 
 ## Notify when a channel finishes
 
@@ -185,10 +263,35 @@ do not answer the basic-info query at all. Having a passcode set in the
 SkyCharger app is **not** one of those cases — see
 [PROTOCOL.md](PROTOCOL.md#passwords).
 
+A program started *from Home Assistant* is remembered, so its direction is
+reported even when the charger's own program query is unavailable or turned off.
+
+## The passcode prompt on the charger
+
+Some chargers show `PASSCODE: XXXX` on their own display while Home Assistant is
+polling. It does not affect the readings, and it does not block starting or
+stopping a channel.
+
+The likely cause is the query that carries the passcode digits: the charger is
+showing the code for someone standing at it to type into the SkyCharger app.
+Only that one query is involved, and only when the digits sent do not match.
+**Settings → Devices & Services → SkyRC Charger → Configure** has two ways to
+deal with it:
+
+| Option | Effect |
+|---|---|
+| **Passcode** | The four digits set in the SkyCharger app. Sent with the query, so the charger accepts it instead of prompting. |
+| **Read the program of a running channel** | Turn it off and that query is never sent at all. The cost is charge-vs-discharge for runs the integration did not start itself — those channels read `working`. |
+
+This explanation is not yet confirmed against a display — if you can watch the
+charger while Home Assistant polls it, a note on
+[the discussion thread](https://community.home-assistant.io/t/skyrc-charger-ble-per-channel-monitoring-charging-done-notifications/1016445)
+would settle it.
+
 ## Development
 
 ```bash
-python -m pytest        # unit tests for the frame parser
+python -m pytest        # frame encoding/parsing and program limits
 ```
 
 ## Credits

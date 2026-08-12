@@ -22,20 +22,37 @@ from .const import (
     BATTERY_CHEMISTRY,
     BATTERY_TYPE_NAMES,
     CHARGE_PROGRAMS,
+    CHEM_NICKEL,
     CMD_QUERY_BASIC_INFO,
     CMD_QUERY_CHANNEL_STATUS,
+    CMD_START_CHARGE,
+    CMD_STOP_CHARGE,
     DEFAULT_PASSWORD,
     DISCHARGE_PROGRAMS,
     FRAME_START,
     INVALID_U16,
     MASK_TO_CHANNEL,
+    PROGRAM_CYCLE,
     PROGRAM_NAMES,
+    PROGRAM_RE_PEAK,
+    PROGRAM_STORAGE,
     STATE_CHARGING,
     STATE_DISCHARGING,
     STATE_DONE,
     STATE_ERROR,
     STATE_NAMES,
     STATE_WORKING,
+)
+from .programs import (
+    BATTERY_TYPE_CODES,
+    CHARGE_CURRENT,
+    CHARGE_VOLTAGE,
+    DISCHARGE_CURRENT,
+    DISCHARGE_VOLTAGE,
+    PROGRAM_CODES,
+    TRACK_VOLTAGE,
+    ProgramConfig,
+    chemistry_of,
 )
 
 # Plausible per-cell voltage window (mV): NiMH ~1.0 V up to LiPo ~4.3 V.
@@ -64,6 +81,65 @@ def build_basic_info_query(mask: int, password: str = DEFAULT_PASSWORD) -> bytes
     """
     digits = bytes(int(d) for d in password[:4])
     return build_command(CMD_QUERY_BASIC_INFO, bytes([mask]) + digits)
+
+
+def build_stop_charge(mask: int) -> bytes:
+    """Build a STOP_CHARGE frame for the given channel ``mask``."""
+    return build_command(CMD_STOP_CHARGE, bytes([mask]))
+
+
+def build_start_charge(mask: int, config: ProgramConfig) -> bytes:
+    """Build a START_CHARGE frame running ``config`` on channel ``mask``.
+
+    ``config`` is expected to have been validated already (see
+    :func:`.programs.validate`) — the charger does not range-check what it is
+    sent. Parameters the program does not use are sent as zero, which is what
+    the SkyCharger app ends up doing for them.
+    """
+    chemistry = chemistry_of(config.battery_type)
+
+    def used(parameter: str) -> int:
+        return getattr(config, parameter) if config.uses(parameter) else 0
+
+    # Storage runs to a single target voltage; the app sends it as both
+    # setpoints, and the program takes no separate charge voltage.
+    charge_mv = (
+        config.discharge_voltage
+        if config.program == PROGRAM_STORAGE
+        else used(CHARGE_VOLTAGE)
+    )
+
+    args = bytearray(16)
+    args[0] = mask
+    args[1] = BATTERY_TYPE_CODES[config.battery_type]
+    args[2] = config.cell_count
+    args[3] = PROGRAM_CODES[chemistry][config.program]
+    args[4] = (used(CHARGE_CURRENT) // 100) & 0xFF
+    args[5] = (used(DISCHARGE_CURRENT) // 100) & 0xFF
+    args[6:8] = used(DISCHARGE_VOLTAGE).to_bytes(2, "big")
+    args[8:10] = charge_mv.to_bytes(2, "big")
+    if chemistry == CHEM_NICKEL:
+        if config.program == PROGRAM_RE_PEAK:
+            args[10] = config.repeak_number
+        elif config.program == PROGRAM_CYCLE:
+            args[10] = config.cycle_model
+            args[11] = config.cycle_number
+    args[12:14] = used(TRACK_VOLTAGE).to_bytes(2, "big")
+    # args[14:16] carry the high bytes of the currents on the D200NEX only.
+    return build_command(CMD_START_CHARGE, bytes(args))
+
+
+def parse_ack(data: bytes) -> tuple[int, int] | None:
+    """Parse a START_CHARGE/STOP_CHARGE reply into ``(mask, result)``.
+
+    The charger echoes the channel mask it acted on, then one result byte:
+    ``0x01`` for STOP_CHARGE and ``0x00`` for START_CHARGE on a live Q200neo,
+    including for programs it went on to refuse. The result byte is therefore
+    not a success flag — the channel status is what tells you what happened.
+    """
+    if len(data) < 2:
+        return None
+    return data[0], data[1]
 
 
 @dataclass
