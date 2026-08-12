@@ -173,7 +173,7 @@ def test_parse_basic_info_lithium_discharge():
     assert info.chemistry == "lithium"
     assert info.cell_count == 3
     assert info.program == "discharge"
-    assert info.password_required is False
+    assert info.passcode_accepted is False
 
 
 def test_parse_basic_info_nickel_program_codes_differ():
@@ -191,8 +191,10 @@ def test_parse_basic_info_unknown_battery_type():
     assert info.program is None  # program codes are meaningless without chemistry
 
 
-def test_parse_basic_info_password_flag_and_short_payload():
-    assert parse_basic_info(_basic_info(password=1)).password_required is True
+def test_parse_basic_info_passcode_flag_and_short_payload():
+    """d[9] is the charger's verdict on the digits sent: 1 accepted, 0 not."""
+    assert parse_basic_info(_basic_info(password=1)).passcode_accepted is True
+    assert parse_basic_info(_basic_info(password=0)).passcode_accepted is False
     assert parse_basic_info(_basic_info()[:9]) is None
 
 

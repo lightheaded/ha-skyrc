@@ -104,7 +104,7 @@ in the basic-info payload below.
 | d[5] | charge current limit | ×100 mA |
 | d[6] | discharge current limit | ×100 mA |
 | d[7], d[8] | firmware version | major, minor |
-| d[9] | password set | `1` = the channel requires `VERIFY_PASSWORD` |
+| d[9] | passcode accepted | `1` = the digits sent were accepted, `0` = rejected |
 
 ### Programs (`d[4]`)
 
@@ -231,40 +231,35 @@ the DC ones (`0x08`-`0x0B`), which switch the charger into power-supply mode.
 ## Passwords
 
 `0x5F` is the only command that carries the passcode: the four digits, one per
-byte. `d[9]` of the reply is a flag about them, and the sense of it appears to
-be **"the digits were accepted"**, not "a passcode is required" — the reference
-app opens its passcode dialog when `d[9]` is `0`, and treats `1` as authorised.
-An earlier version of this document had that backwards.
+byte. `d[9]` of the reply is the charger's verdict on them — **`1` accepted,
+`0` rejected** — which is how the reference app reads it.
 
-**Observed on a Q200neo with a passcode set in the SkyCharger app:** sending the
-default `00 00 00 00` gets `d[9] = 0x00` on all four channels, and everything
-works anyway — `0x55`, `0x5F`, `0x58`, `0x5A` all answer, and START_CHARGE and
-STOP_CHARGE are both carried out. Nothing observed so far is gated on the
-passcode.
+Established on a Q200neo rather than inferred: `d[9]` came back `0` on all four
+channels for three different wrong codes, and `1` on all four for the right one.
 
-### The passcode prompt on the display
+### A rejected passcode is what puts the prompt on the display
 
-Two Q200neos show `PASSCODE: XXXX` on their own screen while a client is
-polling. It does not affect the readings, and it does not stop START_CHARGE or
-STOP_CHARGE. It is persistent enough to make the charger's own front panel hard
-to operate.
+Digits the charger does not accept make it show `PASSCODE: NNNN` on its own
+screen: the code it wants, for whoever is standing at it to read and type into
+the app. It is a proximity check — you have to be able to see the charger to
+authorise a client. It does not affect the readings, and it does not stop
+START_CHARGE or STOP_CHARGE, but it is persistent enough to make the charger's
+front panel hard to use.
 
-The likely mechanism: `0x5F` arrives with digits the charger does not accept
-(`d[9] = 0`), so the charger displays the code for whoever is standing at it to
-type into the app. That fits the app's flow, and `0x5F` is the only command in
-play that carries passcode digits. Still **not proven** against the display —
-that needs someone watching one while a client sends nothing but `0x55`.
+Demonstrated in one sitting, watching the display:
 
-What made it *persistent* was on the client side: this integration re-sent
-`0x5F` for every working channel on every poll, so a prompt was raised every 30
-seconds. A channel's program cannot change without it passing through idle, so
-the query now runs once per run — a run that both starts and ends between two
-polls is caught by the elapsed duration going backwards. Measured over three
-consecutive polls of a charging channel: one `0x5F`, twelve `0x55`.
+1. `0x55` only, on one held connection, for sixty seconds — no prompt.
+2. `0x5F` with `0000`, which is correct for a charger that has none set — no prompt.
+3. `0x5F` with `1234`, then `9999` — the prompt appeared, showing a code.
+4. `0x5F` with the code from the screen — `d[9] = 1` on every channel.
+
+So it only afflicts chargers that *do* have a passcode set, because the default
+`0000` is then wrong for them. Sending the right one stops it, and a client that
+never sends `0x5F` cannot cause it at all.
 
 There is no passcode item anywhere in the charger's own menu tree (checked
 against the V1.2 manual: System Settings, Task Parameters, Factory Settings,
-System Info), so this is an app-side feature.
+System Info), so it is set from the app.
 
 Two ways out, both available in the integration's options:
 
@@ -274,6 +269,14 @@ Two ways out, both available in the integration's options:
   a channel's program — though a program *started* from Home Assistant is
   remembered, so direction still works for those runs.
 
+Frequency is a client-side matter too. This integration used to re-send `0x5F`
+for every working channel on every poll, raising a prompt every 30 seconds; it
+now asks once per run, which for a charger with the wrong passcode is one prompt
+per charge rather than a wall of them.
+
+**Nothing else is gated on the passcode.** `0x55`, `0x58` and `0x5A` all answer,
+and START_CHARGE and STOP_CHARGE are both carried out, whatever digits are sent.
+
 A channel that genuinely refuses to answer is still untested. The reference app
 implies a `VERIFY_PASSWORD (0x74)` handshake; if `0x5F` goes unanswered the
 client stops asking after three timeouts and the direction falls back to
@@ -282,8 +285,6 @@ client stops asking after three timeouts and the direction falls back to
 ## Notes / open items
 - The `duration` unit (seconds vs minutes) and `status` byte semantics are not
   yet nailed down; the raw payload is logged at debug level for future work.
-- Whether the `PASSCODE` prompt on the display comes from `0x5F` is unconfirmed;
-  see above.
 - The Q200neo offers AGM and Cold charge programs for lead-acid packs, and a
   Pb AGM battery type. The reference app has no program byte for either, so they
   are left out rather than guessed at.

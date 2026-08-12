@@ -26,8 +26,8 @@
           "poll_program": "Read the program of a running channel"
         },
         "data_description": {
-          "passcode": "The four-digit passcode set in the SkyCharger app. Leave it at 0000 if you have not set one.",
-          "poll_program": "Reads each running channel's battery type and program, which is what tells charging apart from discharging. Turn it off if your charger shows a passcode prompt on its display while Home Assistant is polling it."
+          "passcode": "The four-digit passcode set in the SkyCharger app. Leave it at 0000 if you have not set one. If the charger shows PASSCODE on its display while Home Assistant polls it, those are the digits it wants \u2014 read them off the screen and enter them here.",
+          "poll_program": "Reads each running channel's battery type and program, which is what tells charging apart from discharging. It is the only query that carries the passcode, so turning it off stops the charger prompting for one \u2014 at the cost of the direction for runs Home Assistant did not start itself."
         }
       }
     }

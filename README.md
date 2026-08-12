@@ -63,11 +63,11 @@ the two programs that deliberately stay `working` rather than guess a direction
 - Home Assistant **2024.12** or newer
 - A Bluetooth adapter or ESPHome Bluetooth proxy within range of the charger
 
-A passcode set in the SkyCharger app does **not** need to be removed: on a
-Q200neo with one set, every query is answered and both start and stop are
-carried out. If your charger shows a `PASSCODE` prompt on its display while
-Home Assistant is polling, see [the passcode prompt](#the-passcode-prompt-on-the-charger)
-below.
+A passcode set in the SkyCharger app does **not** need to be removed — every
+query is answered and both start and stop are carried out regardless. It only
+affects one thing: the charger will show a `PASSCODE` prompt on its display
+until Home Assistant is told the code. See
+[the passcode prompt](#the-passcode-prompt-on-the-charger) below.
 
 ## Installation
 
@@ -305,31 +305,30 @@ reported even when the charger's own program query is unavailable or turned off.
 
 ## The passcode prompt on the charger
 
-Some chargers show `PASSCODE: XXXX` on their own display while Home Assistant is
-polling. It does not affect the readings, and it does not block starting or
-stopping a channel — but it is persistent enough to make the charger's own front
-panel awkward to use.
+If your charger shows `PASSCODE: NNNN` on its display while Home Assistant is
+polling, it has a passcode set in the SkyCharger app and Home Assistant is not
+sending it. The charger is showing you the code it wants — it is a proximity
+check, so that only someone who can see the charger can authorise a client.
 
-The likely cause is the query that carries the passcode digits: the charger is
-showing the code for someone standing at it to type into the SkyCharger app.
-Only that one query is involved, and only when the digits sent do not match.
-
-Most of the persistence was this integration's fault and is fixed: that query
-used to go out for every running channel on **every poll**, raising a fresh
-prompt every 30 seconds. It now runs **once per run** — the program cannot
-change without the channel passing through idle. If a prompt once per charge is
-still one too many, **Settings → Devices & Services → SkyRC Charger →
-Configure** has two more ways to deal with it:
+**The fix is to tell Home Assistant the code.** Read the four digits off the
+charger's screen and put them in **Settings → Devices & Services → SkyRC
+Charger → Configure**. It has two options:
 
 | Option | Effect |
 |---|---|
-| **Passcode** | The four digits set in the SkyCharger app. Sent with the query, so the charger accepts it instead of prompting. |
-| **Read the program of a running channel** | Turn it off and that query is never sent at all. The cost is charge-vs-discharge for runs the integration did not start itself — those channels read `working`. |
+| **Passcode** | The four digits. Sent with the query that asks a running channel what it is doing, so the charger accepts it instead of prompting. |
+| **Read the program of a running channel** | Turn it off and that query is never sent at all, so nothing can prompt. The cost is charge-vs-discharge for runs the integration did not start itself — those channels read `working`. |
 
-The explanation itself is not yet proven against a display — if you can watch a
-charger while Home Assistant polls it, a note on
-[the discussion thread](https://community.home-assistant.io/t/skyrc-charger-ble-per-channel-monitoring-charging-done-notifications/1016445)
-would settle it.
+Chargers with no passcode set are unaffected: the default `0000` is correct for
+them, and no prompt appears.
+
+The prompt used to be far worse than it needed to be, and that part was this
+integration's fault: the query went out for every running channel on **every
+poll**, raising a fresh prompt every 30 seconds. It now runs **once per run**,
+so even with the wrong passcode it is one prompt per charge.
+
+The integration also logs a warning naming the passcode it tried when the
+charger rejects it, so this shows up in the log rather than only on the device.
 
 ## Development
 

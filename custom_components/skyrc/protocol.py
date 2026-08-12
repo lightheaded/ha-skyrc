@@ -339,7 +339,7 @@ class ChannelBasicInfo:
     chemistry: str | None = None
     cell_count: int | None = None
     program: str | None = None
-    password_required: bool = False
+    passcode_accepted: bool = True
     raw: str = ""
 
 
@@ -363,7 +363,11 @@ def parse_basic_info(data: bytes) -> ChannelBasicInfo | None:
         program=PROGRAM_NAMES.get(chemistry, {}).get(program_code)
         if chemistry
         else None,
-        password_required=data[9] == 1,
+        # d[9] is the charger's verdict on the passcode digits sent with the
+        # query: 1 when they are accepted, 0 when they are not. Proven on a
+        # Q200neo — it read 0 for three different wrong codes and 1 for the
+        # right one, on all four channels.
+        passcode_accepted=data[9] == 1,
         raw=data.hex(),
     )
 

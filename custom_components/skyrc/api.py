@@ -112,6 +112,8 @@ class SkyRcClient:
         self._durations: dict[str, int] = {}
         # The charger's own settings, refreshed on every poll.
         self.settings: ChargerSettings | None = None
+        # Warn once, not on every poll, when the passcode is refused.
+        self._passcode_warned = False
 
     def _notification_handler(self, _sender: int, data: bytearray) -> None:
         _LOGGER.debug("%s: notify <- %s", self._address, data.hex())
@@ -205,9 +207,15 @@ class SkyRcClient:
         info = parse_basic_info(frame.data)
         if info is None or info.mask != mask:
             return None
-        if info.password_required:
-            _LOGGER.debug(
-                "%s: channel %s reports a password is set", self._address, info.channel
+        if not info.passcode_accepted and not self._passcode_warned:
+            self._passcode_warned = True
+            _LOGGER.warning(
+                "%s: the charger rejected the passcode %r. It shows the code it "
+                "wants on its own display while it is being asked — set that in "
+                "the integration options, or turn off reading the program of a "
+                "running channel to stop asking",
+                self._address,
+                self._passcode,
             )
         return info
 
