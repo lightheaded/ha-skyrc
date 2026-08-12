@@ -22,20 +22,46 @@ from .const import (
     BATTERY_CHEMISTRY,
     BATTERY_TYPE_NAMES,
     CHARGE_PROGRAMS,
+    CHEM_NICKEL,
     CMD_QUERY_BASIC_INFO,
     CMD_QUERY_CHANNEL_STATUS,
+    CMD_QUERY_SYSTEM_INFO,
+    CMD_SET_SYSTEM_INFO,
+    CMD_START_CHARGE,
+    CMD_STOP_CHARGE,
     DEFAULT_PASSWORD,
     DISCHARGE_PROGRAMS,
     FRAME_START,
     INVALID_U16,
     MASK_TO_CHANNEL,
+    POWER_STEP_W,
+    PROGRAM_CYCLE,
     PROGRAM_NAMES,
+    PROGRAM_RE_PEAK,
+    PROGRAM_STORAGE,
+    SETTING_CAPACITY,
+    SETTING_MAX_INPUT_POWER,
+    SETTING_MIN_INPUT_VOLTAGE,
+    SETTING_SAFETY_TIMER,
+    SETTING_SOUND,
+    SETTINGS_MASK,
     STATE_CHARGING,
     STATE_DISCHARGING,
     STATE_DONE,
     STATE_ERROR,
     STATE_NAMES,
     STATE_WORKING,
+)
+from .programs import (
+    BATTERY_TYPE_CODES,
+    CHARGE_CURRENT,
+    CHARGE_VOLTAGE,
+    DISCHARGE_CURRENT,
+    DISCHARGE_VOLTAGE,
+    PROGRAM_CODES,
+    TRACK_VOLTAGE,
+    ProgramConfig,
+    chemistry_of,
 )
 
 # Plausible per-cell voltage window (mV): NiMH ~1.0 V up to LiPo ~4.3 V.
@@ -64,6 +90,65 @@ def build_basic_info_query(mask: int, password: str = DEFAULT_PASSWORD) -> bytes
     """
     digits = bytes(int(d) for d in password[:4])
     return build_command(CMD_QUERY_BASIC_INFO, bytes([mask]) + digits)
+
+
+def build_stop_charge(mask: int) -> bytes:
+    """Build a STOP_CHARGE frame for the given channel ``mask``."""
+    return build_command(CMD_STOP_CHARGE, bytes([mask]))
+
+
+def build_start_charge(mask: int, config: ProgramConfig) -> bytes:
+    """Build a START_CHARGE frame running ``config`` on channel ``mask``.
+
+    ``config`` is expected to have been validated already (see
+    :func:`.programs.validate`) — the charger does not range-check what it is
+    sent. Parameters the program does not use are sent as zero, which is what
+    the SkyCharger app ends up doing for them.
+    """
+    chemistry = chemistry_of(config.battery_type)
+
+    def used(parameter: str) -> int:
+        return getattr(config, parameter) if config.uses(parameter) else 0
+
+    # Storage runs to a single target voltage; the app sends it as both
+    # setpoints, and the program takes no separate charge voltage.
+    charge_mv = (
+        config.discharge_voltage
+        if config.program == PROGRAM_STORAGE
+        else used(CHARGE_VOLTAGE)
+    )
+
+    args = bytearray(16)
+    args[0] = mask
+    args[1] = BATTERY_TYPE_CODES[config.battery_type]
+    args[2] = config.cell_count
+    args[3] = PROGRAM_CODES[chemistry][config.program]
+    args[4] = (used(CHARGE_CURRENT) // 100) & 0xFF
+    args[5] = (used(DISCHARGE_CURRENT) // 100) & 0xFF
+    args[6:8] = used(DISCHARGE_VOLTAGE).to_bytes(2, "big")
+    args[8:10] = charge_mv.to_bytes(2, "big")
+    if chemistry == CHEM_NICKEL:
+        if config.program == PROGRAM_RE_PEAK:
+            args[10] = config.repeak_number
+        elif config.program == PROGRAM_CYCLE:
+            args[10] = config.cycle_model
+            args[11] = config.cycle_number
+    args[12:14] = used(TRACK_VOLTAGE).to_bytes(2, "big")
+    # args[14:16] carry the high bytes of the currents on the D200NEX only.
+    return build_command(CMD_START_CHARGE, bytes(args))
+
+
+def parse_ack(data: bytes) -> tuple[int, int] | None:
+    """Parse a START_CHARGE/STOP_CHARGE reply into ``(mask, result)``.
+
+    The charger echoes the channel mask it acted on, then one result byte:
+    ``0x01`` for STOP_CHARGE and ``0x00`` for START_CHARGE on a live Q200neo,
+    including for programs it went on to refuse. The result byte is therefore
+    not a success flag — the channel status is what tells you what happened.
+    """
+    if len(data) < 2:
+        return None
+    return data[0], data[1]
 
 
 @dataclass
@@ -254,7 +339,7 @@ class ChannelBasicInfo:
     chemistry: str | None = None
     cell_count: int | None = None
     program: str | None = None
-    password_required: bool = False
+    passcode_accepted: bool = True
     raw: str = ""
 
 
@@ -278,6 +363,96 @@ def parse_basic_info(data: bytes) -> ChannelBasicInfo | None:
         program=PROGRAM_NAMES.get(chemistry, {}).get(program_code)
         if chemistry
         else None,
-        password_required=data[9] == 1,
+        # d[9] is the charger's verdict on the passcode digits sent with the
+        # query: 1 when they are accepted, 0 when they are not. Proven on a
+        # Q200neo — it read 0 for three different wrong codes and 1 for the
+        # right one, on all four channels.
+        passcode_accepted=data[9] == 1,
+        raw=data.hex(),
+    )
+
+
+# --- charger settings (QUERY_SYSTEM_INFO / SET_SYSTEM_INFO) ---------------
+
+
+def build_system_info_query(mask: int = SETTINGS_MASK) -> bytes:
+    """Build a QUERY_SYSTEM_INFO frame."""
+    return build_command(CMD_QUERY_SYSTEM_INFO, bytes([mask]))
+
+
+def _build_setting(setting: int, b1: int, b2: int = 0, b3: int = 0) -> bytes:
+    return build_command(
+        CMD_SET_SYSTEM_INFO, bytes([SETTINGS_MASK, setting, b1, b2, b3])
+    )
+
+
+def build_set_safety_timer(enabled: bool, minutes: int) -> bytes:
+    """Stop a run after ``minutes``; the charger's Task Parameters ▸ Safety Timer."""
+    return _build_setting(
+        SETTING_SAFETY_TIMER, 1 if enabled else 0, *divmod(minutes, 0x100)
+    )
+
+
+def build_set_capacity_limit(enabled: bool, capacity_mah: int) -> bytes:
+    """Stop a run after ``capacity_mah``; Task Parameters ▸ Max. Capacity."""
+    return _build_setting(
+        SETTING_CAPACITY, 1 if enabled else 0, *divmod(capacity_mah, 0x100)
+    )
+
+
+def build_set_min_input_voltage(millivolts: int) -> bytes:
+    """Refuse to run below this input voltage; System Settings ▸ Min. Input Voltage."""
+    return _build_setting(SETTING_MIN_INPUT_VOLTAGE, *divmod(millivolts, 0x100))
+
+
+def build_set_max_input_power(watts: int) -> bytes:
+    """Cap total charge power; System Settings ▸ Max. Input Power."""
+    return _build_setting(SETTING_MAX_INPUT_POWER, watts // POWER_STEP_W)
+
+
+def build_set_sounds(beep_volume: int, completion_beep: bool) -> bytes:
+    """Set both beep bytes; System Settings ▸ Volume and Completion Signal."""
+    return _build_setting(SETTING_SOUND, beep_volume, 1 if completion_beep else 0)
+
+
+@dataclass
+class ChargerSettings:
+    """The charger's own settings, as reported by QUERY_SYSTEM_INFO.
+
+    Global, not per channel: writing one on channel A changes what every
+    channel reports.
+    """
+
+    safety_timer_enabled: bool
+    safety_timer_minutes: int
+    capacity_limit_enabled: bool
+    capacity_limit_mah: int
+    beep_volume: int
+    completion_beep: bool
+    min_input_voltage_mv: int
+    max_input_power_w: int
+    raw: str = ""
+
+
+def parse_system_info(data: bytes) -> ChargerSettings | None:
+    """Parse a QUERY_SYSTEM_INFO payload (bytes after the command echo).
+
+    Offsets were mapped by writing one setting at a time and diffing the
+    payload, then cross-checked against the charger's own menus. Offsets past
+    d[14] are not decoded: this firmware returns a payload too short for the
+    fields the reference app reads there.
+    """
+    if len(data) < 15:
+        return None
+
+    return ChargerSettings(
+        safety_timer_enabled=data[2] == 1,
+        safety_timer_minutes=(data[3] << 8) | data[4],
+        capacity_limit_enabled=data[5] == 1,
+        capacity_limit_mah=(data[6] << 8) | data[7],
+        beep_volume=data[8],
+        completion_beep=data[9] != 0,
+        min_input_voltage_mv=(data[10] << 8) | data[11],
+        max_input_power_w=data[13] * POWER_STEP_W,
         raw=data.hex(),
     )

@@ -19,14 +19,42 @@ CHAR_UUID: Final = "0000ffe1-0000-1000-8000-00805f9b34fb"
 # Frame protocol.
 FRAME_START: Final = 0x0F
 
-# Commands (subset used for monitoring).
+# Commands.
+CMD_START_CHARGE: Final = 0x05
+CMD_SET_SYSTEM_INFO: Final = 0x11
 CMD_QUERY_CHANNEL_STATUS: Final = 0x55
 CMD_INFO: Final = 0x57
+CMD_QUERY_SYSTEM_INFO: Final = 0x5A
 CMD_QUERY_BASIC_INFO: Final = 0x5F
+CMD_STOP_CHARGE: Final = 0xFE
+
+# SET_SYSTEM_INFO setting codes. Only the ones the charger reports back through
+# QUERY_SYSTEM_INFO are used: a setting that cannot be read cannot be confirmed
+# written, and this charger acknowledges either way. RESET (0x15) and the DC
+# ones (0x08-0x0B, power-supply mode) are deliberately absent.
+SETTING_SAFETY_TIMER: Final = 0x01
+SETTING_CAPACITY: Final = 0x02
+SETTING_SOUND: Final = 0x03
+SETTING_MIN_INPUT_VOLTAGE: Final = 0x04
+SETTING_MAX_INPUT_POWER: Final = 0x07
+
+# Max. Input Power is reported and set in units of ten watts.
+POWER_STEP_W: Final = 10
+
+# Charger settings are global despite the per-channel argument: writing one on
+# channel A changes what every channel reports. Use one channel for all of them.
+SETTINGS_MASK: Final = 0x01
 
 # Channel password digits sent with QUERY_BASIC_INFO. "0000" is the factory
 # default and the value the SkyCharger app starts from.
 DEFAULT_PASSWORD: Final = "0000"
+
+# Config entry options.
+CONF_PASSCODE: Final = "passcode"
+CONF_POLL_PROGRAM: Final = "poll_program"
+
+# Services.
+SERVICE_START_PROGRAM: Final = "start_program"
 
 # Channels A–D and their bit masks.
 CHANNELS: Final = ("A", "B", "C", "D")
@@ -91,6 +119,11 @@ BATTERY_CHEMISTRY: Final[dict[int, str]] = {
     0x06: CHEM_LEAD,
     0x07: CHEM_LEAD,
 }
+
+# Programs that need special handling when a START_CHARGE frame is built.
+PROGRAM_STORAGE: Final = "storage"
+PROGRAM_RE_PEAK: Final = "re_peak"
+PROGRAM_CYCLE: Final = "cycle"
 
 # Program byte (d[4]) → operation mode. The codes are reused per chemistry.
 PROGRAM_NAMES: Final[dict[str, dict[int, str]]] = {

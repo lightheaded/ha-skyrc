@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 import voluptuous as vol
@@ -10,10 +11,22 @@ from homeassistant.components.bluetooth import (
     BluetoothServiceInfoBleak,
     async_discovered_service_info,
 )
-from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import (
+    ConfigEntry,
+    ConfigFlow,
+    ConfigFlowResult,
+    OptionsFlow,
+)
 from homeassistant.const import CONF_ADDRESS
+from homeassistant.core import callback
 
-from .const import DOMAIN, NAME_PREFIX
+from .const import (
+    CONF_PASSCODE,
+    CONF_POLL_PROGRAM,
+    DEFAULT_PASSWORD,
+    DOMAIN,
+    NAME_PREFIX,
+)
 
 
 def _is_charger(info: BluetoothServiceInfoBleak) -> bool:
@@ -28,6 +41,12 @@ class SkyRcConfigFlow(ConfigFlow, domain=DOMAIN):
     def __init__(self) -> None:
         self._discovery: BluetoothServiceInfoBleak | None = None
         self._discovered: dict[str, str] = {}
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(entry: ConfigEntry) -> SkyRcOptionsFlow:
+        """Get the options flow for this handler."""
+        return SkyRcOptionsFlow()
 
     async def async_step_bluetooth(
         self, discovery_info: BluetoothServiceInfoBleak
@@ -54,6 +73,31 @@ class SkyRcConfigFlow(ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="confirm",
             description_placeholders={"name": self._discovery.name},
+        )
+
+    async def async_step_reauth(
+        self, entry_data: Mapping[str, Any]
+    ) -> ConfigFlowResult:
+        """Handle the charger refusing the passcode we send it."""
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Ask for the passcode the charger is showing on its display."""
+        entry = self._get_reauth_entry()
+        if user_input is not None:
+            return self.async_update_reload_and_abort(
+                entry,
+                options={**entry.options, CONF_PASSCODE: user_input[CONF_PASSCODE]},
+            )
+
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=vol.Schema(
+                {vol.Required(CONF_PASSCODE): vol.All(str, vol.Match(r"^\d{4}$"))}
+            ),
+            description_placeholders={"name": entry.title},
         )
 
     async def async_step_user(
@@ -88,6 +132,34 @@ class SkyRcConfigFlow(ConfigFlow, domain=DOMAIN):
                             for address, name in self._discovered.items()
                         }
                     )
+                }
+            ),
+        )
+
+
+class SkyRcOptionsFlow(OptionsFlow):
+    """Passcode and program-polling options."""
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Manage the options."""
+        if user_input is not None:
+            return self.async_create_entry(data=user_input)
+
+        options = self.config_entry.options
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_PASSCODE,
+                        default=options.get(CONF_PASSCODE, DEFAULT_PASSWORD),
+                    ): vol.All(str, vol.Match(r"^\d{4}$")),
+                    vol.Required(
+                        CONF_POLL_PROGRAM,
+                        default=options.get(CONF_POLL_PROGRAM, True),
+                    ): bool,
                 }
             ),
         )

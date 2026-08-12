@@ -1,0 +1,101 @@
+start_program:
+  target:
+    entity:
+      integration: skyrc
+      domain: button
+  fields:
+    battery_type:
+      selector:
+        select:
+          options:
+            - lipo
+            - liion
+            - life
+            - lihv
+            - nimh
+            - nicd
+            - pb
+          translation_key: battery_type
+    program:
+      selector:
+        select:
+          options:
+            - balance_charge
+            - charge
+            - discharge
+            - storage
+            - re_peak
+            - cycle
+          translation_key: program
+    cell_count:
+      selector:
+        number:
+          min: 1
+          max: 15
+          step: 1
+          mode: box
+    charge_current:
+      selector:
+        number:
+          min: 100
+          max: 10000
+          step: 100
+          unit_of_measurement: mA
+          mode: box
+    discharge_current:
+      selector:
+        number:
+          min: 100
+          max: 2000
+          step: 100
+          unit_of_measurement: mA
+          mode: box
+    charge_voltage:
+      selector:
+        number:
+          min: 600
+          max: 4500
+          step: 10
+          unit_of_measurement: mV
+          mode: box
+    discharge_voltage:
+      selector:
+        number:
+          min: 600
+          max: 4500
+          step: 10
+          unit_of_measurement: mV
+          mode: box
+    track_voltage:
+      advanced: true
+      selector:
+        number:
+          min: 50
+          max: 300
+          step: 1
+          unit_of_measurement: mV
+          mode: box
+    cycle_number:
+      advanced: true
+      selector:
+        number:
+          min: 1
+          max: 3
+          step: 1
+          mode: box
+    cycle_order:
+      advanced: true
+      selector:
+        select:
+          options:
+            - charge_discharge
+            - discharge_charge
+          translation_key: cycle_order
+    repeak_number:
+      advanced: true
+      selector:
+        number:
+          min: 1
+          max: 1
+          step: 1
+          mode: box

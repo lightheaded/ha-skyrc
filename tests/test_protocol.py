@@ -17,7 +17,7 @@ _COMP = os.path.join(
 _pkg = types.ModuleType("_skyrc")
 _pkg.__path__ = [_COMP]
 sys.modules["_skyrc"] = _pkg
-for _name in ("const", "protocol"):
+for _name in ("const", "programs", "protocol"):
     _spec = importlib.util.spec_from_file_location(
         f"_skyrc.{_name}", os.path.join(_COMP, f"{_name}.py")
     )
@@ -25,13 +25,24 @@ for _name in ("const", "protocol"):
     sys.modules[f"_skyrc.{_name}"] = _mod
     _spec.loader.exec_module(_mod)
 
+programs = sys.modules["_skyrc.programs"]
 protocol = sys.modules["_skyrc.protocol"]
+ProgramConfig = programs.ProgramConfig
 FrameReader = protocol.FrameReader
 build_basic_info_query = protocol.build_basic_info_query
 build_channel_query = protocol.build_channel_query
 build_command = protocol.build_command
 parse_basic_info = protocol.parse_basic_info
 parse_channel_status = protocol.parse_channel_status
+build_start_charge = protocol.build_start_charge
+build_set_safety_timer = protocol.build_set_safety_timer
+build_set_capacity_limit = protocol.build_set_capacity_limit
+build_set_min_input_voltage = protocol.build_set_min_input_voltage
+build_set_max_input_power = protocol.build_set_max_input_power
+build_set_sounds = protocol.build_set_sounds
+parse_system_info = protocol.parse_system_info
+build_stop_charge = protocol.build_stop_charge
+parse_ack = protocol.parse_ack
 
 
 def _status_frame(data: bytes) -> bytes:
@@ -162,7 +173,7 @@ def test_parse_basic_info_lithium_discharge():
     assert info.chemistry == "lithium"
     assert info.cell_count == 3
     assert info.program == "discharge"
-    assert info.password_required is False
+    assert info.passcode_accepted is False
 
 
 def test_parse_basic_info_nickel_program_codes_differ():
@@ -180,8 +191,10 @@ def test_parse_basic_info_unknown_battery_type():
     assert info.program is None  # program codes are meaningless without chemistry
 
 
-def test_parse_basic_info_password_flag_and_short_payload():
-    assert parse_basic_info(_basic_info(password=1)).password_required is True
+def test_parse_basic_info_passcode_flag_and_short_payload():
+    """d[9] is the charger's verdict on the digits sent: 1 accepted, 0 not."""
+    assert parse_basic_info(_basic_info(password=1)).passcode_accepted is True
+    assert parse_basic_info(_basic_info(password=0)).passcode_accepted is False
     assert parse_basic_info(_basic_info()[:9]) is None
 
 
@@ -214,3 +227,196 @@ def test_bad_checksum_dropped():
     frame = bytearray(_status_frame(bytes([0x01, 0x02, 0x00, 0x00])))
     frame[-1] ^= 0xFF  # corrupt checksum
     assert FrameReader().feed(bytes(frame)) == []
+
+
+# --- control frames -------------------------------------------------------
+#
+# The frames asserted here were checked against a live Q200neo: the charger
+# acknowledged them and its basic-info reply echoed back the battery type, cell
+# count, program and current limit that had been sent.
+
+
+def _decode_args(frame: bytes) -> bytes:
+    """Strip header, command and checksum off a request frame."""
+    assert frame[0] == 0x0F
+    # len counts the payload (command + args) plus one.
+    assert frame[1] == len(frame) - 2
+    payload = frame[2:-1]
+    assert frame[-1] == sum(payload) & 0xFF
+    return payload[1:]
+
+
+def test_build_stop_charge_matches_device():
+    # Acknowledged by a live Q200neo with "01 01".
+    assert build_stop_charge(0x01) == bytes([0x0F, 0x03, 0xFE, 0x01, 0xFF])
+    assert build_stop_charge(0x08) == bytes([0x0F, 0x03, 0xFE, 0x08, 0x06])
+
+
+def test_build_start_charge_lithium_charge():
+    frame = build_start_charge(
+        0x01,
+        ProgramConfig(
+            battery_type="lipo",
+            program="charge",
+            cell_count=3,
+            charge_current=2500,
+            charge_voltage=4200,
+        ),
+    )
+    assert frame[2] == 0x05
+    args = _decode_args(frame)
+    assert len(args) == 16
+    assert args[0] == 0x01  # channel mask
+    assert args[1] == 0x00  # LiPo
+    assert args[2] == 3  # cells
+    assert args[3] == 0x01  # charge program
+    assert args[4] == 25  # 2500 mA / 100
+    assert args[8:10] == (4200).to_bytes(2, "big")
+    # A plain charge takes no discharge parameters.
+    assert args[5] == 0
+    assert args[6:8] == b"\x00\x00"
+    assert args[10:16] == bytes(6)
+
+
+def test_build_start_charge_storage_sends_one_target_twice():
+    """Storage runs to a single voltage, sent as both setpoints."""
+    frame = build_start_charge(
+        0x02,
+        ProgramConfig(
+            battery_type="liion",
+            program="storage",
+            cell_count=6,
+            charge_current=5000,
+            discharge_current=2000,
+            charge_voltage=4100,
+            discharge_voltage=3800,
+        ),
+    )
+    args = _decode_args(frame)
+    assert args[1] == 0x01  # Li-ion
+    assert args[3] == 0x03  # storage
+    assert args[4] == 50
+    assert args[5] == 20
+    assert args[6:8] == (3800).to_bytes(2, "big")
+    assert args[8:10] == (3800).to_bytes(2, "big")
+
+
+def test_build_start_charge_nickel_cycle():
+    frame = build_start_charge(
+        0x04,
+        ProgramConfig(
+            battery_type="nimh",
+            program="cycle",
+            cell_count=8,
+            charge_current=2000,
+            discharge_current=1000,
+            cycle_model=1,
+            cycle_number=3,
+            track_voltage=60,
+        ),
+    )
+    args = _decode_args(frame)
+    assert args[1] == 0x04  # NiMH
+    assert args[3] == 0x04  # cycle
+    assert args[2] == 8
+    assert args[10] == 1  # discharge first
+    assert args[11] == 3  # three cycles
+    assert args[12:14] == (60).to_bytes(2, "big")
+
+
+def test_build_start_charge_nickel_re_peak():
+    frame = build_start_charge(
+        0x08,
+        ProgramConfig(
+            battery_type="nicd",
+            program="re_peak",
+            cell_count=4,
+            charge_current=3000,
+            repeak_number=1,
+            track_voltage=60,
+        ),
+    )
+    args = _decode_args(frame)
+    assert args[3] == 0x03  # re-peak
+    assert args[10] == 1  # repeak count
+    assert args[11] == 0
+    assert args[12:14] == (60).to_bytes(2, "big")
+
+
+def test_build_start_charge_lead_acid_discharge():
+    frame = build_start_charge(
+        0x01,
+        ProgramConfig(
+            battery_type="pb",
+            program="discharge",
+            cell_count=6,
+            discharge_current=1000,
+            discharge_voltage=1900,
+        ),
+    )
+    args = _decode_args(frame)
+    assert args[1] == 0x06  # Pb
+    assert args[3] == 0x01  # lead acid discharge
+    assert args[4] == 0  # no charge current
+    assert args[5] == 10
+    assert args[6:8] == (1900).to_bytes(2, "big")
+    assert args[8:10] == b"\x00\x00"
+
+
+def test_parse_ack():
+    # Live replies: stop -> "01 01", start -> "01 00".
+    assert parse_ack(bytes([0x01, 0x01])) == (0x01, 0x01)
+    assert parse_ack(bytes([0x04, 0x00])) == (0x04, 0x00)
+    assert parse_ack(b"\x01") is None
+
+
+# --- charger settings -----------------------------------------------------
+#
+# The payload below is a real QUERY_SYSTEM_INFO reply from a Q200neo whose menus
+# read: Safety Timer 240 Minute, Max. Capacity 12000 mAh, Min. Input Voltage
+# 11.0V, Max. Input Power 200W.
+SYSTEM_INFO = bytes.fromhex(
+    "010a0100f0012ee00101 2af80014 00 000000080007000000000009000900000000 0000".replace(" ", "")
+)
+
+
+def test_parse_system_info_matches_the_charger_menus():
+    settings = parse_system_info(SYSTEM_INFO)
+    assert settings is not None
+    assert settings.safety_timer_enabled is True
+    assert settings.safety_timer_minutes == 240
+    assert settings.capacity_limit_enabled is True
+    assert settings.capacity_limit_mah == 12000
+    assert settings.min_input_voltage_mv == 11000
+    assert settings.max_input_power_w == 200
+    assert settings.beep_volume == 1
+    assert settings.completion_beep is True
+
+
+def test_parse_system_info_needs_a_full_payload():
+    assert parse_system_info(SYSTEM_INFO[:10]) is None
+
+
+def test_build_set_safety_timer():
+    args = _decode_args(build_set_safety_timer(True, 180))
+    assert args == bytes([0x01, 0x01, 0x01, 0x00, 180])
+
+
+def test_build_set_capacity_limit():
+    args = _decode_args(build_set_capacity_limit(True, 10000))
+    assert args == bytes([0x01, 0x02, 0x01, 0x27, 0x10])
+
+
+def test_build_set_min_input_voltage():
+    args = _decode_args(build_set_min_input_voltage(10500))
+    assert args == bytes([0x01, 0x04, 0x29, 0x04, 0x00])
+
+
+def test_build_set_max_input_power_uses_ten_watt_units():
+    args = _decode_args(build_set_max_input_power(200))
+    assert args == bytes([0x01, 0x07, 20, 0x00, 0x00])
+
+
+def test_build_set_sounds_writes_both_bytes():
+    args = _decode_args(build_set_sounds(2, False))
+    assert args == bytes([0x01, 0x03, 2, 0, 0x00])
