@@ -223,6 +223,14 @@ the firmware ignores them or it keeps them somewhere `0x5A` does not report.
 Since the acknowledgement is identical either way, **do not write a setting you
 cannot read back** — there is no way to confirm the old value was restored.
 
+`0x05` was chased to the end, because a settings survey wrote 60 to it and the
+front panel then showed Trickle Charge = 60 mV. It was a coincidence. Writing
+30 changed nothing (the menu's floor is 50 mV, so a real setting would have
+clamped, not ignored), and writing 100 — comfortably inside the range — changed
+nothing either. The panel held 60 mV throughout, and the `0x5A` payload never
+moved a byte. Every write was acknowledged `01 01`. So the acknowledgement of a
+setting in this group means only that the frame parsed.
+
 Not tried, deliberately: `RESET` (`0x15`), which restores factory settings, and
 the DC ones (`0x08`-`0x0B`), which switch the charger into power-supply mode.
 
