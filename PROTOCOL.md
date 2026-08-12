@@ -98,11 +98,26 @@ the battery type in `d[2]`:
 Storage and cycle programs charge *or* discharge depending on the pack, so
 this integration reports them as plain `working`.
 
-## Notes / open items
+<a name="passwords"></a>
 
-- A per-channel password (`passwordEnable`) can be set in the SkyCharger app. If
-  set, `0x55` may not return data until a `VERIFY_PASSWORD (0x74)` handshake.
-  This integration assumes no password is set and surfaces a clear error if the
-  charger connects but returns nothing.
+## Passwords
+
+`0x5F` carries four password digits; this integration always sends the factory
+default `00 00 00 00`, and `d[9]` of the reply is the charger's own "password
+check required" flag.
+
+**Observed on a Q200neo with a passcode set in the SkyCharger app:** both `0x55`
+and `0x5F` were answered normally and `d[9]` came back `0x00` — no password
+check. A user of an ESPHome Bluetooth proxy reports the same. So an app passcode
+is not the same thing as the per-channel `passwordEnable` flag the protocol
+cares about, and it does not need to be cleared.
+
+A channel that genuinely has `passwordEnable` set is untested. The reference app
+implies it would need a `VERIFY_PASSWORD (0x74)` handshake first; if that ever
+happens, `0x5F` simply goes unanswered, the client stops asking after three
+timeouts, and the direction falls back to `working`. `0x55` returning nothing at
+all surfaces as a clear setup error.
+
+## Notes / open items
 - The `duration` unit (seconds vs minutes) and `status` byte semantics are not
   yet nailed down; the raw payload is logged at debug level for future work.

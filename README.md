@@ -45,7 +45,11 @@ The neo-series BLE protocol is shared across models; the domain is generic
 
 - Home Assistant **2024.12** or newer
 - A Bluetooth adapter or ESPHome Bluetooth proxy within range of the charger
-- The charger's channel **password disabled** in the SkyCharger app (see [PROTOCOL.md](PROTOCOL.md))
+
+A passcode set in the SkyCharger app does **not** need to be removed: on a
+Q200neo with one set, both the status and basic-info queries are answered
+normally and the charger reports no password check. See
+[PROTOCOL.md](PROTOCOL.md) for the one case that would degrade.
 
 ## Installation
 
@@ -72,17 +76,18 @@ The charger is usually auto-discovered: **Settings → Devices & Services →
 Discovered**. Otherwise add it via **+ Add Integration → SkyRC Charger**
 and pick it from the list of chargers in range.
 
-## Notify when charging finishes
+## Notify when a channel finishes
 
 The integration deliberately ships **no** notification logic — wire it up with a
-plain automation. This one fires when any channel finishes and reports the
-channel, cell configuration, and pack voltage, e.g.:
+plain automation. This one fires when any channel finishes and reports what
+finished, the pack, and how well the cells are balanced:
 
-> 🔋 SkyRC charging complete
-> **Channel B finished charging (2S) — 8.39 V**
+> 🔋 Channel B at storage voltage
+> Li-ion 6S · 22.56 V · 32 mAh
+> Cells 3.753–3.763 V (Δ10 mV)
 
 ```yaml
-alias: SkyRC — notify when charging done
+alias: SkyRC — notify when a channel finishes
 mode: queued
 triggers:
   - trigger: state
@@ -92,22 +97,52 @@ triggers:
       - sensor.charger_8f12_channel_c_status
       - sensor.charger_8f12_channel_d_status
     to: "done"
+    # Don't re-fire when a channel comes back from a failed BLE poll.
+    not_from: ["unavailable", "unknown"]
 actions:
   - action: notify.main # or notify.mobile_app_your_phone
     data:
-      title: 🔋 SkyRC charging complete
-      message: >-
+      title: >-
         {%- set eid = trigger.entity_id -%}
         {%- set ch = eid.split('_channel_')[1].split('_status')[0] | upper -%}
-        {%- set v = states(eid.replace('_status', '_voltage')) | float(0) | round(2) -%}
+        {%- set prog = state_attr(eid, 'program') -%}
+        {%- set verb = {'charge': 'charged', 'balance_charge': 'charged',
+        'fast_charge': 'charged', 'auto_charge': 'charged', 're_peak': 're-peaked',
+        'discharge': 'discharged', 'storage': 'at storage voltage',
+        'cycle': 'cycled'}.get(prog, 'finished') -%}
+        🔋 Channel {{ ch }} {{ verb }}
+      message: >-
+        {%- set eid = trigger.entity_id -%}
+        {%- set base = eid.replace('_status', '') -%}
+        {%- set batt = {'lipo': 'LiPo', 'liion': 'Li-ion', 'life': 'LiFe',
+        'lihv': 'LiHV', 'nimh': 'NiMH', 'nicd': 'NiCd', 'pb': 'Pb',
+        'pb_agm': 'Pb AGM'}.get(state_attr(eid, 'battery_type')) -%}
         {%- set cells = state_attr(eid, 'cell_configuration') -%}
-        Channel {{ ch }} finished charging{% if cells %} ({{ cells }}){% endif %} — {{ v }} V
+        {%- set cv = state_attr(eid, 'cell_voltages_mv') or [] -%}
+        {%- set v = states(base ~ '_voltage') | float(0) -%}
+        {%- set mah = states(base ~ '_capacity') | int(0) -%}
+        {%- set t = states(base ~ '_battery_temperature') -%}
+        {%- set spread = (cv | max - cv | min) if cv | count > 1 else 0 -%}
+        {{ [batt, cells] | select('string') | join(' ') }}{% if batt or cells %} · {% endif %}{{ v | round(2) }} V{% if mah > 0 %} · {{ mah }} mAh{% endif %}{% if cv | count > 1 %}{{ '\n' }}Cells {{ (cv | min / 1000) | round(3) }}–{{ (cv | max / 1000) | round(3) }} V (Δ{{ spread }} mV){% if spread > 50 %} ⚠️{% endif %}{% endif %}{% if t not in ['unknown', 'unavailable', 'none'] %}{{ '\n' }}Pack {{ t }} °C{% endif %}
 ```
 
 Replace `charger_8f12` with your charger's entity-ID slug (it follows the
-advertised name, e.g. `#Charger-8F12` → `charger_8f12`). The `cell_configuration`
-attribute (`2S`, `3S`, …) lives on each channel's **status** sensor; it is omitted
-from the message when the charger reports no per-cell data.
+advertised name, e.g. `#Charger-8F12` → `charger_8f12`).
+
+Every part degrades on its own, so the message stays sensible whatever the
+charger reports:
+
+| Part | Comes from | Left out when |
+|---|---|---|
+| the verb (*charged*, *discharged*, *at storage voltage*, …) | `program` attribute | unknown program → a plain "finished" |
+| `Li-ion 6S` | `battery_type` / `cell_configuration` attributes | the charger reports neither |
+| `32 mAh` | capacity sensor | nothing was moved |
+| cell spread, with ⚠️ over 50 mV | `cell_voltages_mv` attribute | fewer than two cells are reported |
+| `Pack 24 °C` | battery temperature sensor | no external probe is attached |
+
+Elapsed time is not in the message because the **duration** entity is disabled
+by default — enable it on the channel's device page and add
+`states(base ~ '_duration')` if you want it.
 
 Prefer the enum states over friendly-name string matching — the status sensor
 reports `done` / `charging` / `discharging` / `idle` / `error` / `ready` /
@@ -130,8 +165,9 @@ The program is kept while a channel is working and after it is done, so a
 
 Two cases stay `working` rather than guessing: the **storage** and **cycle**
 programs (they charge *or* discharge depending on the pack), and chargers that
-do not answer the basic-info query — which is what happens when a channel
-password is set in the SkyCharger app.
+do not answer the basic-info query at all. Having a passcode set in the
+SkyCharger app is **not** one of those cases — see
+[PROTOCOL.md](PROTOCOL.md#passwords).
 
 ## Development
 
