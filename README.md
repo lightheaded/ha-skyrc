@@ -39,7 +39,23 @@ The neo-series BLE protocol is shared across models; the domain is generic
 
 ### Example
 
-<img width="760" height="1146" alt="Screenshot 2026-07-07 at 10 22 12" src="https://github.com/user-attachments/assets/60a948e8-1b09-4898-bfe9-59b04fbbe7ce" />
+The device page: four channels, each with its own status, capacity, voltage,
+current and battery temperature, plus the charger's internal temperature as a
+diagnostic. The **duration** entities are greyed out because they are disabled
+by default — enable them here if you want elapsed time.
+
+<img width="760" alt="Home Assistant device page for a SkyRC Q200neo, showing per-channel status, capacity, voltage, current and battery temperature entities" src="https://raw.githubusercontent.com/lightheaded/ha-skyrc/master/images/device-page.png" />
+
+Each channel's **status** sensor carries the pack details as attributes — cell
+count, cell configuration and the individual cell voltages, plus the
+`battery_type` and `program` that decide whether a running channel reads
+`charging` or `discharging`:
+
+<img width="560" alt="Attributes of a channel status sensor: cell count 6, cell configuration 6S, per-cell voltages, battery type liion, program storage, and the list of possible states" src="https://raw.githubusercontent.com/lightheaded/ha-skyrc/master/images/channel-status-attributes.png" />
+
+Here the channel finished a **storage** run on a 6S Li-ion pack, which is one of
+the two programs that deliberately stay `working` rather than guess a direction
+(see [Charging or discharging?](#charging-or-discharging) below).
 
 ## Requirements
 
