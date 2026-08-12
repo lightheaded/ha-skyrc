@@ -310,9 +310,13 @@ polling, it has a passcode set in the SkyCharger app and Home Assistant is not
 sending it. The charger is showing you the code it wants — it is a proximity
 check, so that only someone who can see the charger can authorise a client.
 
-**The fix is to tell Home Assistant the code.** Read the four digits off the
-charger's screen and put them in **Settings → Devices & Services → SkyRC
-Charger → Configure**. It has two options:
+**Home Assistant will ask you for it.** When the charger refuses the passcode,
+the integration raises the standard "needs attention" prompt on the Integrations
+page with a box to type the four digits into — read them off the charger's
+screen. Nothing else stops working in the meantime.
+
+You can also set it yourself at any time in **Settings → Devices & Services →
+SkyRC Charger → Configure**, which has two options:
 
 | Option | Effect |
 |---|---|

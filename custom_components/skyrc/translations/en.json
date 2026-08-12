@@ -10,11 +10,19 @@
         "data": {
           "address": "Charger"
         }
+      },
+      "reauth_confirm": {
+        "title": "Passcode needed",
+        "description": "{name} is refusing the passcode Home Assistant sends, and is showing the one it wants on its own display. Read the four digits off the charger and enter them here.\n\nThis is why the charger shows a PASSCODE screen while Home Assistant polls it. If you would rather not use a passcode at all, clear it in the SkyCharger app, or turn off \"Read the program of a running channel\" in this integration's options.",
+        "data": {
+          "passcode": "Passcode"
+        }
       }
     },
     "abort": {
       "already_configured": "This charger is already configured.",
-      "no_devices_found": "No SkyRC chargers found in Bluetooth range. Make sure the charger is powered on and near a Bluetooth adapter or proxy."
+      "no_devices_found": "No SkyRC chargers found in Bluetooth range. Make sure the charger is powered on and near a Bluetooth adapter or proxy.",
+      "reauth_successful": "The passcode was saved and the charger reloaded."
     }
   },
   "options": {

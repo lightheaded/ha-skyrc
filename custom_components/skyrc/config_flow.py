@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 import voluptuous as vol
@@ -72,6 +73,31 @@ class SkyRcConfigFlow(ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="confirm",
             description_placeholders={"name": self._discovery.name},
+        )
+
+    async def async_step_reauth(
+        self, entry_data: Mapping[str, Any]
+    ) -> ConfigFlowResult:
+        """Handle the charger refusing the passcode we send it."""
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Ask for the passcode the charger is showing on its display."""
+        entry = self._get_reauth_entry()
+        if user_input is not None:
+            return self.async_update_reload_and_abort(
+                entry,
+                options={**entry.options, CONF_PASSCODE: user_input[CONF_PASSCODE]},
+            )
+
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=vol.Schema(
+                {vol.Required(CONF_PASSCODE): vol.All(str, vol.Match(r"^\d{4}$"))}
+            ),
+            description_placeholders={"name": entry.title},
         )
 
     async def async_step_user(

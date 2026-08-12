@@ -261,7 +261,9 @@ There is no passcode item anywhere in the charger's own menu tree (checked
 against the V1.2 manual: System Settings, Task Parameters, Factory Settings,
 System Info), so it is set from the app.
 
-Two ways out, both available in the integration's options:
+Two ways out, both available in the integration's options — and because `d[9]`
+says plainly which case you are in, the integration asks for the code itself
+rather than leaving it to be discovered:
 
 - set the real passcode, so `0x5F` is answered with `d[9] = 1`;
 - turn off program polling, so `0x5F` is never sent. The cost is the

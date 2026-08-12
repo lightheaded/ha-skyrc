@@ -68,9 +68,16 @@ class SkyRcCoordinator(DataUpdateCoordinator[dict[str, ChannelStatus]]):
 
     async def _async_update_data(self) -> dict[str, ChannelStatus]:
         try:
-            return await self._client.async_poll(self._ble_device())
+            data = await self._client.async_poll(self._ble_device())
         except SkyRcError as err:
             raise UpdateFailed(str(err)) from err
+
+        # A refused passcode is why the charger puts a prompt on its display.
+        # Ask for the right one rather than leaving it prompting: Home Assistant
+        # only raises one reauth flow per entry, so this is safe to repeat.
+        if self._client.passcode_accepted is False:
+            self.config_entry.async_start_reauth(self.hass)
+        return data
 
     async def async_start_program(
         self, channel: str, config: ProgramConfig
