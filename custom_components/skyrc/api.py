@@ -37,6 +37,7 @@ from .protocol import (
     ChannelBasicInfo,
     ChannelStatus,
     ChargerSettings,
+    DirectionTracker,
     Frame,
     FrameReader,
     build_basic_info_query,
@@ -49,6 +50,7 @@ from .protocol import (
     build_start_charge,
     build_stop_charge,
     build_system_info_query,
+    expected_direction,
     parse_ack,
     parse_basic_info,
     parse_channel_status,
@@ -107,7 +109,9 @@ class SkyRcClient:
         # Programs this integration started itself, per channel: the fallback
         # for reporting charge/discharge direction when the charger's own
         # basic info is unavailable or not being polled.
-        self._commanded: dict[str, tuple[str, str]] = {}
+        self._commanded: dict[str, ProgramConfig] = {}
+        # Charge/discharge direction of the programs whose name does not say.
+        self._direction = DirectionTracker()
         # Last elapsed duration seen per channel, to spot a new run.
         self._durations: dict[str, int] = {}
         # The charger's own settings, refreshed on every poll.
@@ -237,6 +241,7 @@ class SkyRcClient:
             self._basic_info.pop(channel, None)
             self._commanded.pop(channel, None)
             self._durations.pop(channel, None)
+            self._direction.reset(channel)
             return
 
         # A channel's program cannot change without it passing through idle,
@@ -253,6 +258,10 @@ class SkyRcClient:
         )
         if status.duration_s is not None:
             self._durations[channel] = status.duration_s
+        if restarted:
+            # A run we know nothing about; whatever direction the last one was
+            # going does not apply to it.
+            self._direction.reset(channel)
 
         if self._poll_program and (channel not in self._basic_info or restarted):
             info = await self._query_basic_info(client, status.mask)
@@ -265,7 +274,10 @@ class SkyRcClient:
             status.program = cached.program
         elif (commanded := self._commanded.get(channel)) is not None:
             # Fall back on what we asked the charger to run.
-            status.battery_type, status.program = commanded
+            status.battery_type = commanded.battery_type
+            status.program = commanded.program
+
+        status.direction = self._direction.update(status)
 
     async def _read_channel(
         self, client: BleakClient, mask: int
@@ -428,7 +440,7 @@ class SkyRcClient:
                 config.program,
                 channel,
             )
-            self._commanded[channel] = (config.battery_type, config.program)
+            self._commanded[channel] = config
 
             # The channel takes a moment to leave idle.
             status = None
@@ -454,6 +466,10 @@ class SkyRcClient:
                     "still idle. Check the battery type, cell count and program "
                     "against what this charger supports"
                 )
+            # A storage run's direction follows from the voltage the pack
+            # starts at, and we know this program's setpoint exactly. Saves
+            # waiting for the voltage to move far enough to prove it.
+            self._direction.seed(channel, expected_direction(config, status.voltage_mv))
             await self._apply_basic_info(client, status)
             return status
 
@@ -479,6 +495,7 @@ class SkyRcClient:
                     f"stop on channel {channel} (mask 0x{mask:02X})"
                 )
             self._commanded.pop(channel, None)
+            self._direction.reset(channel)
 
             await asyncio.sleep(STOP_CONFIRM_DELAY)
             status = await self._read_channel(client, mask)

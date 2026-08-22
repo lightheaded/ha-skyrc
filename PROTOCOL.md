@@ -119,8 +119,13 @@ the battery type in `d[2]`:
 | 0x03 | Storage | Re-peak | — |
 | 0x04 | Fast charge | Cycle | — |
 
-Storage and cycle programs charge *or* discharge depending on the pack, so
-this integration reports them as plain `working`.
+Storage and cycle programs charge *or* discharge depending on the pack, and
+nothing in either the channel status or the basic info distinguishes the two —
+the working-state byte reads the same either way. This integration falls back on
+the pack voltage for them: it rises on a charge and falls on a discharge, and a
+10 mV move across the pack (measured against an anchor, so a slow storage
+discharge adds up instead of being lost in the deadband) is taken as the
+verdict. Until it moves that far the channel reports plain `working`.
 
 ## Starting and stopping a channel
 
