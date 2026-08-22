@@ -36,6 +36,8 @@ The neo-series BLE protocol is shared across models; the domain is generic
   - Duration (disabled by default)
 - Charger internal temperature (diagnostic)
 - **Control**: stage a program per channel (battery type, cell count, program, currents, per-cell voltages) and **start** or **stop** it — from the dashboard, or in one call from an automation with `skyrc.start_program`
+- **Presets**: save a staged program under a name and apply it to any channel later, straight from the device page
+- Staged values are kept — across a program change, a lost Bluetooth link and a restart
 - Connect → poll → disconnect cycle that leaves the single BLE slot free for the SkyCharger phone app between polls
 
 ### Example
@@ -118,8 +120,11 @@ Each channel gets a staged program, then two buttons:
 | `number.…_channel_a_discharge_current` | mA |
 | `number.…_channel_a_charge_voltage_per_cell` | mV — the charger's own "Condition" setting |
 | `number.…_channel_a_discharge_voltage_per_cell` | mV cut-off, or the target for a storage run |
+| `select.…_channel_a_preset` | applies a saved preset to the channel |
 | `button.…_channel_a_start` | runs the staged program |
 | `button.…_channel_a_stop` | stops the channel, and clears a latched error |
+| `button.…_channel_a_save_preset` | saves what is staged, under the charger's preset name |
+| `text.…_preset_name` | the name the next saved preset gets |
 
 <img width="620" alt="Controls card on the Home Assistant device page: start and stop buttons for channels A to D, next to the activity log of the channel status sensors" src="https://raw.githubusercontent.com/lightheaded/ha-skyrc/master/images/controls.png" />
 
@@ -128,8 +133,35 @@ parameter the program does not use (a discharge current on a plain charge, say)
 reports unavailable rather than pretending to matter. Nickel packs also get a
 peak sensitivity, cycle count and cycle order, disabled by default.
 
-Changing the battery type or program resets that program's parameters to the
-charger's defaults, so a half-changed program cannot be left staged.
+What you type is kept. A value entered for a program comes back when you return
+to that program, currents carry over to whichever program you switch to, and
+everything survives a lost Bluetooth link, a reload and a restart. Only what has
+never been set falls back on the charger's default — so a half-changed program
+still cannot be left staged. Voltage setpoints are the exception to the
+carry-over: they belong to the chemistry, and a 4200 mV LiPo setpoint has no
+business being squeezed into the LiFe range.
+
+### Presets
+
+A preset is a whole staged program under a name — battery type, program, cell
+count, currents and voltages — saved on the charger and applied to any channel:
+
+1. Stage the program you want on a channel.
+2. Type a name in **Preset name**.
+3. Press **Channel X save preset**.
+
+From then on the channel's **preset** select stages the lot in one pick. Editing
+any parameter afterwards leaves the select blank again — what is staged is no
+longer the preset. Saving over a name replaces it; `skyrc.delete_preset` removes
+one:
+
+```yaml
+action: skyrc.delete_preset
+target:
+  entity_id: select.charger_8f12_channel_a_preset
+data:
+  name: 3S race pack
+```
 
 ### From an automation
 
@@ -298,9 +330,16 @@ The program is kept while a channel is working and after it is done, so a
 "charging done" automation can say *what* finished — `{{ state_attr(eid,
 'program') }}`. It is cleared when the channel goes back to idle.
 
-Two cases stay `working` rather than guessing: the **storage** and **cycle**
-programs (they charge *or* discharge depending on the pack), and chargers that
-do not answer the basic-info query at all. Having a passcode set in the
+The **storage** and **cycle** programs charge *or* discharge depending on where
+the pack starts, and no part of the protocol says which. For those the pack
+voltage does: the status sensor watches it and reports `charging` when it climbs
+and `discharging` when it falls. It takes a poll or two of real movement, so a
+run that has just started reads `working` until the voltage has moved 10 mV —
+except for a storage run started from Home Assistant, where the setpoint is
+known and the direction follows from the voltage the pack starts at.
+
+The same watch covers chargers that do not answer the basic-info query at all,
+which used to be stuck on `working` outright. Having a passcode set in the
 SkyCharger app is **not** one of those cases — see
 [PROTOCOL.md](PROTOCOL.md#passwords).
 

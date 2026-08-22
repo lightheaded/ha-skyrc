@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from typing import Any
 
@@ -19,6 +20,11 @@ from homeassistant.config_entries import (
 )
 from homeassistant.const import CONF_ADDRESS
 from homeassistant.core import callback
+from homeassistant.helpers.selector import (
+    TextSelector,
+    TextSelectorConfig,
+    TextSelectorType,
+)
 
 from .const import (
     CONF_PASSCODE,
@@ -29,8 +35,22 @@ from .const import (
 )
 
 
+# The charger's passcode is four digits. It is checked here rather than in the
+# schema: voluptuous validators that the frontend cannot be shown — vol.Match
+# among them — make the flow fail to load with a 500 instead of rendering.
+PASSCODE_PATTERN = re.compile(r"^\d{4}$")
+PASSCODE_SELECTOR = TextSelector(TextSelectorConfig(type=TextSelectorType.TEXT))
+
+
 def _is_charger(info: BluetoothServiceInfoBleak) -> bool:
     return bool(info.name) and info.name.startswith(NAME_PREFIX)
+
+
+def _passcode_error(user_input: dict[str, Any]) -> dict[str, str]:
+    """Errors for a passcode form, empty when the code looks like a code."""
+    if PASSCODE_PATTERN.match(user_input.get(CONF_PASSCODE, "")):
+        return {}
+    return {CONF_PASSCODE: "invalid_passcode"}
 
 
 class SkyRcConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -86,17 +106,18 @@ class SkyRcConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         """Ask for the passcode the charger is showing on its display."""
         entry = self._get_reauth_entry()
+        errors: dict[str, str] = {}
         if user_input is not None:
-            return self.async_update_reload_and_abort(
-                entry,
-                options={**entry.options, CONF_PASSCODE: user_input[CONF_PASSCODE]},
-            )
+            if not (errors := _passcode_error(user_input)):
+                return self.async_update_reload_and_abort(
+                    entry,
+                    options={**entry.options, CONF_PASSCODE: user_input[CONF_PASSCODE]},
+                )
 
         return self.async_show_form(
             step_id="reauth_confirm",
-            data_schema=vol.Schema(
-                {vol.Required(CONF_PASSCODE): vol.All(str, vol.Match(r"^\d{4}$"))}
-            ),
+            data_schema=vol.Schema({vol.Required(CONF_PASSCODE): PASSCODE_SELECTOR}),
+            errors=errors,
             description_placeholders={"name": entry.title},
         )
 
@@ -144,10 +165,12 @@ class SkyRcOptionsFlow(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Manage the options."""
+        errors: dict[str, str] = {}
         if user_input is not None:
-            return self.async_create_entry(data=user_input)
+            if not (errors := _passcode_error(user_input)):
+                return self.async_create_entry(data=user_input)
 
-        options = self.config_entry.options
+        options = {**self.config_entry.options, **(user_input or {})}
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(
@@ -155,11 +178,12 @@ class SkyRcOptionsFlow(OptionsFlow):
                     vol.Required(
                         CONF_PASSCODE,
                         default=options.get(CONF_PASSCODE, DEFAULT_PASSWORD),
-                    ): vol.All(str, vol.Match(r"^\d{4}$")),
+                    ): PASSCODE_SELECTOR,
                     vol.Required(
                         CONF_POLL_PROGRAM,
                         default=options.get(CONF_POLL_PROGRAM, True),
                     ): bool,
                 }
             ),
+            errors=errors,
         )

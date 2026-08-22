@@ -99,3 +99,27 @@ start_program:
           max: 1
           step: 1
           mode: box
+
+save_preset:
+  target:
+    entity:
+      integration: skyrc
+      domain: select
+  fields:
+    name:
+      required: true
+      example: "3S 1000 mAh storage"
+      selector:
+        text:
+
+delete_preset:
+  target:
+    entity:
+      integration: skyrc
+      domain: select
+  fields:
+    name:
+      required: true
+      example: "3S 1000 mAh storage"
+      selector:
+        text:

@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import logging
 from datetime import timedelta
+from typing import Any
 
 from bleak.backends.device import BLEDevice
 
 from homeassistant.components import bluetooth
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import SkyRcClient, SkyRcError
@@ -21,11 +23,17 @@ from .const import (
     DEFAULT_PASSWORD,
     DEFAULT_POLL_INTERVAL,
     DOMAIN,
+    MAX_PRESETS,
+    PRESET_NAME_MAX_LENGTH,
+    STORAGE_VERSION,
 )
-from .programs import ProgramConfig, ProgramError, validate
+from .programs import ProgramConfig, ProgramError, StagedPrograms, validate
 from .protocol import ChannelStatus, ChargerSettings
 
 _LOGGER = logging.getLogger(__name__)
+
+# Staged values are typed a few at a time; batch the writes.
+SAVE_DELAY = 5
 
 type SkyRcConfigEntry = ConfigEntry[SkyRcCoordinator]
 
@@ -50,11 +58,94 @@ class SkyRcCoordinator(DataUpdateCoordinator[dict[str, ChannelStatus]]):
             poll_program=entry.options.get(CONF_POLL_PROGRAM, True),
         )
         # The program each channel will run when it is started from Home
-        # Assistant. Held here, not on the charger: the charger only reports a
-        # channel's battery type, cell count and program once one has run.
-        self.staged: dict[str, ProgramConfig] = {
-            channel: ProgramConfig() for channel in CHANNELS
-        }
+        # Assistant, the values that went into it, and the saved presets. Held
+        # here, not on the charger: the charger only reports a channel's
+        # battery type, cell count and program once one has run, and forgets
+        # them again when the channel goes idle.
+        self.programs = StagedPrograms(CHANNELS)
+        self._store: Store[dict[str, Any]] = Store(
+            hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}"
+        )
+        # The name the next preset saved from a channel will get.
+        self.preset_name = ""
+
+    @callback
+    def async_set_preset_name(self, name: str) -> None:
+        """Set the name the next saved preset will get."""
+        self.preset_name = name
+        self.async_update_listeners()
+
+    @property
+    def staged(self) -> dict[str, ProgramConfig]:
+        """The program staged on each channel."""
+        return self.programs.staged
+
+    async def async_load_programs(self) -> None:
+        """Restore the staged programs and presets from the last run."""
+        self.programs.restore(await self._store.async_load())
+
+    @callback
+    def _async_programs_changed(self) -> None:
+        """Persist the staged programs and tell the entities they moved."""
+        self._store.async_delay_save(self.programs.as_dict, SAVE_DELAY)
+        self.async_update_listeners()
+
+    @callback
+    def async_set_parameter(self, channel: str, parameter: str, value: int) -> None:
+        """Set one parameter of a channel's staged program."""
+        self.programs.set_parameter(channel, parameter, value)
+        self._async_programs_changed()
+
+    @callback
+    def async_select(
+        self,
+        channel: str,
+        *,
+        battery_type: str | None = None,
+        program: str | None = None,
+    ) -> None:
+        """Stage a different battery type and/or program on a channel."""
+        self.programs.select(channel, battery_type=battery_type, program=program)
+        self._async_programs_changed()
+
+    @callback
+    def async_save_preset(self, name: str, channel: str) -> None:
+        """Save a channel's staged program as a named preset."""
+        name = name.strip()
+        if not name:
+            raise ServiceValidationError(
+                "A preset needs a name; put one in the charger's preset name "
+                "field first"
+            )
+        if len(name) > PRESET_NAME_MAX_LENGTH:
+            raise ServiceValidationError(
+                f"Preset name {name!r} is longer than {PRESET_NAME_MAX_LENGTH} "
+                "characters"
+            )
+        known = name in self.programs.presets
+        if not known and len(self.programs.presets) >= MAX_PRESETS:
+            raise ServiceValidationError(
+                f"There are already {MAX_PRESETS} presets; delete one before "
+                "saving another"
+            )
+        self.programs.save_preset(name, channel)
+        self._async_programs_changed()
+
+    @callback
+    def async_delete_preset(self, name: str) -> None:
+        """Delete a named preset."""
+        if name not in self.programs.presets:
+            raise ServiceValidationError(f"There is no preset called {name!r}")
+        self.programs.delete_preset(name)
+        self._async_programs_changed()
+
+    @callback
+    def async_apply_preset(self, channel: str, name: str) -> None:
+        """Stage a named preset on a channel."""
+        if name not in self.programs.presets:
+            raise ServiceValidationError(f"There is no preset called {name!r}")
+        self.programs.apply_preset(channel, name)
+        self._async_programs_changed()
 
     def _ble_device(self) -> BLEDevice:
         device = bluetooth.async_ble_device_from_address(

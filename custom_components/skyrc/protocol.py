@@ -68,6 +68,18 @@ from .programs import (
 CELL_MV_MIN = 500
 CELL_MV_MAX = 5000
 
+# How far the pack voltage has to move, in mV across the whole pack, before a
+# channel running a both-ways program is called charging or discharging. The
+# charger reports whole millivolts and its readings are steady to a few of them
+# between polls, so this is above the noise while still resolving a slow
+# storage discharge within a poll or two.
+DIRECTION_THRESHOLD_MV = 10
+
+# How far from the storage setpoint a pack has to sit, per cell, before the
+# direction of a storage run this integration started is called before the
+# voltage has had time to move.
+STORAGE_MARGIN_MV_PER_CELL = 20
+
 
 def build_command(command: int, args: bytes = b"") -> bytes:
     """Build a request frame for ``command`` with optional ``args``."""
@@ -250,6 +262,9 @@ class ChannelStatus:
     # From the channel's basic info (QUERY_BASIC_INFO), when available.
     battery_type: str | None = None
     program: str | None = None
+    # Which way the pack voltage is moving, for the programs whose name does
+    # not say (see :class:`DirectionTracker`).
+    direction: str | None = None
 
     @property
     def is_done(self) -> bool:
@@ -263,17 +278,19 @@ class ChannelStatus:
     def detailed_state(self) -> str:
         """State name refined with the charge/discharge direction.
 
-        The charger reports one "working" state for both directions; the
-        program tells them apart. Programs that can run either way (storage,
-        cycle) and unknown programs stay "working".
+        The charger reports one "working" state for both directions. For most
+        programs the program name says which it is; for the ones that can run
+        either way (storage, cycle) — and when the program is not known at all
+        — the direction the pack voltage is moving does, once it has moved far
+        enough to be sure. Until then the state stays "working".
         """
-        if self.state != STATE_WORKING or self.program is None:
+        if self.state != STATE_WORKING:
             return self.state_name
         if self.program in DISCHARGE_PROGRAMS:
             return STATE_DISCHARGING
         if self.program in CHARGE_PROGRAMS:
             return STATE_CHARGING
-        return self.state_name
+        return self.direction or self.state_name
 
 
 def parse_channel_status(data: bytes) -> ChannelStatus | None:
@@ -322,6 +339,69 @@ def parse_channel_status(data: bytes) -> ChannelStatus | None:
     status.cell_voltages_mv = cells
 
     return status
+
+
+class DirectionTracker:
+    """Tells charging from discharging by watching the pack voltage.
+
+    The storage and cycle programs charge *or* discharge depending on where the
+    pack starts, and nothing in either the channel status or the basic info
+    says which one is happening. The voltage does: it rises on a charge and
+    falls on a discharge. Movement is measured against an anchor rather than
+    the previous poll, so a slow storage discharge that moves a millivolt at a
+    time still adds up to a verdict instead of being lost in the deadband.
+    """
+
+    def __init__(self) -> None:
+        self._anchor: dict[str, int] = {}
+        self._direction: dict[str, str] = {}
+
+    def reset(self, channel: str) -> None:
+        """Forget a channel — it went idle, or started a different run."""
+        self._anchor.pop(channel, None)
+        self._direction.pop(channel, None)
+
+    def seed(self, channel: str, direction: str | None) -> None:
+        """Set the direction a run is expected to take before it shows."""
+        self.reset(channel)
+        if direction is not None:
+            self._direction[channel] = direction
+
+    def update(self, status: ChannelStatus) -> str | None:
+        """Fold ``status`` into what is known about its channel's direction."""
+        channel = status.channel
+        if status.state != STATE_WORKING or status.voltage_mv is None:
+            self.reset(channel)
+            return None
+
+        anchor = self._anchor.get(channel)
+        if anchor is None:
+            self._anchor[channel] = status.voltage_mv
+        elif abs(delta := status.voltage_mv - anchor) >= DIRECTION_THRESHOLD_MV:
+            self._anchor[channel] = status.voltage_mv
+            self._direction[channel] = (
+                STATE_CHARGING if delta > 0 else STATE_DISCHARGING
+            )
+        return self._direction.get(channel)
+
+
+def expected_direction(config: ProgramConfig, voltage_mv: int | None) -> str | None:
+    """Which way a storage run will go, from the voltage the pack starts at.
+
+    Only for programs this integration started itself: it is the one case where
+    the setpoint is known exactly. A pack sitting within a cell or two of the
+    setpoint could go either way, so it gets no verdict — the voltage will say
+    soon enough.
+    """
+    if config.program != PROGRAM_STORAGE or not voltage_mv or not config.cell_count:
+        return None
+    target = config.discharge_voltage * config.cell_count
+    margin = STORAGE_MARGIN_MV_PER_CELL * config.cell_count
+    if voltage_mv <= target - margin:
+        return STATE_CHARGING
+    if voltage_mv >= target + margin:
+        return STATE_DISCHARGING
+    return None
 
 
 @dataclass

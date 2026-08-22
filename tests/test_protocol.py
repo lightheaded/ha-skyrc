@@ -420,3 +420,98 @@ def test_build_set_max_input_power_uses_ten_watt_units():
 def test_build_set_sounds_writes_both_bytes():
     args = _decode_args(build_set_sounds(2, False))
     assert args == bytes([0x01, 0x03, 2, 0, 0x00])
+
+
+# --- direction of the both-ways programs ----------------------------------
+
+DirectionTracker = protocol.DirectionTracker
+expected_direction = protocol.expected_direction
+ChannelStatus = protocol.ChannelStatus
+
+
+def _working(voltage_mv: int, program: str = "storage", state: int = 0x01):
+    return ChannelStatus(
+        mask=0x01,
+        channel="A",
+        state=state,
+        state_name="working" if state == 0x01 else "idle",
+        voltage_mv=voltage_mv,
+        program=program,
+    )
+
+
+def test_direction_tracker_needs_movement_before_it_says_anything():
+    tracker = DirectionTracker()
+    assert tracker.update(_working(22_560)) is None
+    # Below the threshold: still no verdict, and still "working" to the sensor.
+    status = _working(22_565)
+    status.direction = tracker.update(status)
+    assert status.direction is None
+    assert status.detailed_state == "working"
+
+
+def test_direction_tracker_reports_a_rising_pack_as_charging():
+    tracker = DirectionTracker()
+    tracker.update(_working(22_500))
+    status = _working(22_515)
+    status.direction = tracker.update(status)
+    assert status.direction == "charging"
+    assert status.detailed_state == "charging"
+
+
+def test_direction_tracker_reports_a_falling_pack_as_discharging():
+    tracker = DirectionTracker()
+    tracker.update(_working(23_000))
+    status = _working(22_980)
+    status.direction = tracker.update(status)
+    assert status.detailed_state == "discharging"
+
+
+def test_direction_tracker_accumulates_small_steps():
+    """A storage discharge crawls; each step is under the deadband."""
+    tracker = DirectionTracker()
+    for voltage in (23_000, 22_996, 22_993, 22_989):
+        direction = tracker.update(_working(voltage))
+    assert direction == "discharging"
+
+
+def test_direction_tracker_follows_a_cycle_turning_round():
+    tracker = DirectionTracker()
+    tracker.update(_working(10_000, program="cycle"))  # anchors, says nothing yet
+    for voltage in (10_020, 10_040):
+        assert tracker.update(_working(voltage, program="cycle")) == "charging"
+    for voltage in (10_030, 10_020):
+        direction = tracker.update(_working(voltage, program="cycle"))
+    assert direction == "discharging"
+
+
+def test_direction_tracker_forgets_an_idle_channel():
+    tracker = DirectionTracker()
+    tracker.update(_working(10_000))
+    tracker.update(_working(10_020))
+    assert tracker.update(_working(10_020, state=0x02)) is None
+    assert tracker.update(_working(10_020)) is None
+
+
+def test_named_programs_beat_the_voltage():
+    """A discharge is a discharge even if the pack reads high for a moment."""
+    status = _working(10_000, program="discharge")
+    status.direction = "charging"
+    assert status.detailed_state == "discharging"
+
+
+def test_expected_direction_of_a_storage_run():
+    config = ProgramConfig(
+        battery_type="liion", program="storage", cell_count=6, discharge_voltage=3800
+    )
+    # 6S at 3.70 V/cell: below the 3.80 V storage target, so it charges.
+    assert expected_direction(config, 22_200) == "charging"
+    # 6S at 4.00 V/cell: above it, so it discharges.
+    assert expected_direction(config, 24_000) == "discharging"
+    # Sitting on the target: could go either way, so nothing is claimed.
+    assert expected_direction(config, 22_800) is None
+
+
+def test_expected_direction_only_applies_to_storage():
+    config = ProgramConfig(battery_type="nimh", program="cycle", cell_count=4)
+    assert expected_direction(config, 4_800) is None
