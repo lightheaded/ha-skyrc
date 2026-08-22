@@ -19,6 +19,9 @@
         }
       }
     },
+    "error": {
+      "invalid_passcode": "The passcode is the four digits the charger shows on its own display."
+    },
     "abort": {
       "already_configured": "This charger is already configured.",
       "no_devices_found": "No SkyRC chargers found in Bluetooth range. Make sure the charger is powered on and near a Bluetooth adapter or proxy.",
@@ -38,6 +41,9 @@
           "poll_program": "Reads each running channel's battery type and program, which is what tells charging apart from discharging. It is the only query that carries the passcode, so turning it off stops the charger prompting for one \u2014 at the cost of the direction for runs Home Assistant did not start itself."
         }
       }
+    },
+    "error": {
+      "invalid_passcode": "The passcode is the four digits the charger shows on its own display."
     }
   },
   "entity": {
@@ -107,6 +113,9 @@
           "discharge_charge": "Discharge, then charge"
         }
       },
+      "preset": {
+        "name": "Channel {channel} preset"
+      },
       "beep_volume": {
         "name": "Beep volume",
         "state": {
@@ -157,6 +166,14 @@
       },
       "stop": {
         "name": "Channel {channel} stop"
+      },
+      "save_preset": {
+        "name": "Channel {channel} save preset"
+      }
+    },
+    "text": {
+      "preset_name": {
+        "name": "Preset name"
       }
     },
     "switch": {
@@ -219,6 +236,26 @@
         "repeak_number": {
           "name": "Re-peak count",
           "description": "How many times to re-peak a nickel pack."
+        }
+      }
+    },
+    "save_preset": {
+      "name": "Save preset",
+      "description": "Saves what a channel has staged \u2014 battery type, program, cell count, currents and voltages \u2014 as a preset that any channel can be set to later. Saving over an existing name replaces it.",
+      "fields": {
+        "name": {
+          "name": "Name",
+          "description": "What to call the preset."
+        }
+      }
+    },
+    "delete_preset": {
+      "name": "Delete preset",
+      "description": "Deletes a saved preset. Presets belong to the charger, so any of its selects will do.",
+      "fields": {
+        "name": {
+          "name": "Name",
+          "description": "The preset to delete."
         }
       }
     }

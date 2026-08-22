@@ -55,6 +55,16 @@ CONF_POLL_PROGRAM: Final = "poll_program"
 
 # Services.
 SERVICE_START_PROGRAM: Final = "start_program"
+SERVICE_SAVE_PRESET: Final = "save_preset"
+SERVICE_DELETE_PRESET: Final = "delete_preset"
+
+# Staged programs and presets are kept in .storage, one file per config entry.
+STORAGE_VERSION: Final = 1
+
+# A preset is a name and a program; both stay small on purpose, so the select
+# that lists them on the device page stays readable.
+PRESET_NAME_MAX_LENGTH: Final = 32
+MAX_PRESETS: Final = 20
 
 # Channels A–D and their bit masks.
 CHANNELS: Final = ("A", "B", "C", "D")

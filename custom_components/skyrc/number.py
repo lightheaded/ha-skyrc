@@ -24,12 +24,12 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
-from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import CHANNELS
 from .coordinator import SkyRcConfigEntry, SkyRcCoordinator
 from .entity import SkyRcEntity
 from .programs import (
+    CELL_COUNT,
     CHARGE_CURRENT,
     CHARGE_VOLTAGE,
     CYCLE_NUMBER,
@@ -41,8 +41,6 @@ from .programs import (
     cell_limit,
     limits_for,
 )
-
-CELL_COUNT = "cell_count"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -124,7 +122,7 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class SkyRcStagedNumber(SkyRcEntity, NumberEntity, RestoreEntity):
+class SkyRcStagedNumber(SkyRcEntity, NumberEntity):
     """One numeric parameter of a channel's staged program."""
 
     entity_description: SkyRcNumberDescription
@@ -182,28 +180,15 @@ class SkyRcStagedNumber(SkyRcEntity, NumberEntity, RestoreEntity):
         return getattr(self._staged, self.entity_description.parameter)
 
     async def async_set_native_value(self, value: float) -> None:
-        """Stage a new value, rounded to a step the charger accepts."""
-        limit = self._limit
-        if limit is None:
-            return
-        setattr(self._staged, self.entity_description.parameter, limit.clamp(int(value)))
-        self.coordinator.async_update_listeners()
+        """Stage a new value, rounded to a step the charger accepts.
 
-    async def async_added_to_hass(self) -> None:
-        """Restore the last staged value, kept inside the current range."""
-        await super().async_added_to_hass()
-        last_state = await self.async_get_last_state()
-        if last_state is None:
+        The coordinator keeps it: a value entered once comes back when the
+        program changes back, and survives a restart.
+        """
+        if self._limit is None:
             return
-        try:
-            value = int(float(last_state.state))
-        except ValueError:  # "unknown", "unavailable", or never recorded
-            return
-        limit = self._limit
-        setattr(
-            self._staged,
-            self.entity_description.parameter,
-            limit.clamp(value) if limit else value,
+        self.coordinator.async_set_parameter(
+            self._channel, self.entity_description.parameter, int(value)
         )
 
 

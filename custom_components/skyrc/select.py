@@ -1,14 +1,22 @@
-"""Battery type and program selects for the staged program of each channel."""
+"""Selects for the staged program of each channel, and for saved presets."""
 
 from __future__ import annotations
+
+import voluptuous as vol
 
 from homeassistant.components.select import SelectEntity
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
+from homeassistant.helpers import config_validation as cv, entity_platform
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
-from homeassistant.helpers.restore_state import RestoreEntity
 
-from .const import CHANNELS
+from .const import (
+    CHANNELS,
+    PRESET_NAME_MAX_LENGTH,
+    SERVICE_DELETE_PRESET,
+    SERVICE_SAVE_PRESET,
+)
 from .coordinator import SkyRcConfigEntry, SkyRcCoordinator
 from .entity import SkyRcEntity
 from .programs import (
@@ -23,6 +31,12 @@ from .programs import (
     ProgramConfig,
     programs_for,
 )
+
+PRESET_NAME_SCHEMA = {
+    vol.Required("name"): vol.All(
+        cv.string, vol.Length(min=1, max=PRESET_NAME_MAX_LENGTH)
+    )
+}
 
 
 async def async_setup_entry(
@@ -39,13 +53,45 @@ async def async_setup_entry(
             SkyRcBatteryTypeSelect(coordinator, channel),
             SkyRcProgramSelect(coordinator, channel),
             SkyRcCycleOrderSelect(coordinator, channel),
+            SkyRcPresetSelect(coordinator, channel),
         )
     ]
     entities.append(SkyRcBeepVolumeSelect(coordinator))
     async_add_entities(entities)
 
+    platform = entity_platform.async_get_current_platform()
+    platform.async_register_entity_service(
+        SERVICE_SAVE_PRESET,
+        cv.make_entity_service_schema(PRESET_NAME_SCHEMA),
+        "async_handle_save_preset",
+    )
+    platform.async_register_entity_service(
+        SERVICE_DELETE_PRESET,
+        cv.make_entity_service_schema(PRESET_NAME_SCHEMA),
+        "async_handle_delete_preset",
+    )
 
-class SkyRcStagedSelect(SkyRcEntity, SelectEntity, RestoreEntity):
+
+class SkyRcSelect(SkyRcEntity, SelectEntity):
+    """Base for every select on the charger, including the preset services.
+
+    Deleting a preset is charger-wide, so any of them will do it. Saving one
+    needs a channel, so it belongs to that channel's preset select.
+    """
+
+    async def async_handle_save_preset(self, name: str) -> None:
+        """Handle save_preset on a select that has no channel to save."""
+        raise ServiceValidationError(
+            f"{self.entity_id} cannot save a preset; target the channel's "
+            "preset select instead"
+        )
+
+    async def async_handle_delete_preset(self, name: str) -> None:
+        """Delete a preset by name."""
+        self.coordinator.async_delete_preset(name)
+
+
+class SkyRcStagedSelect(SkyRcSelect):
     """Base for selects that hold part of a channel's staged program."""
 
     _attr_entity_category = EntityCategory.CONFIG
@@ -66,18 +112,6 @@ class SkyRcStagedSelect(SkyRcEntity, SelectEntity, RestoreEntity):
         """Staged settings are editable even while the charger is unreachable."""
         return True
 
-    async def async_added_to_hass(self) -> None:
-        """Restore the last selection into the staged program."""
-        await super().async_added_to_hass()
-        last_state = await self.async_get_last_state()
-        if last_state is not None:
-            self._restore(last_state.state)
-
-    def _restore(self, value: str) -> None:
-        """Apply a restored state to the staged program, if it still fits."""
-        if value in self.options:
-            setattr(self._staged, self._key, value)
-
 
 class SkyRcBatteryTypeSelect(SkyRcStagedSelect):
     """The battery type a channel will be started with."""
@@ -94,13 +128,8 @@ class SkyRcBatteryTypeSelect(SkyRcStagedSelect):
         return self._staged.battery_type
 
     async def async_select_option(self, option: str) -> None:
-        """Change the battery type, resetting the program to suit it."""
-        staged = self._staged
-        staged.battery_type = option
-        if staged.program not in programs_for(option):
-            staged.program = programs_for(option)[0]
-        self.coordinator.staged[self._channel] = staged.with_defaults()
-        self.coordinator.async_update_listeners()
+        """Change the battery type, moving the program to one it offers."""
+        self.coordinator.async_select(self._channel, battery_type=option)
 
 
 class SkyRcProgramSelect(SkyRcStagedSelect):
@@ -116,22 +145,19 @@ class SkyRcProgramSelect(SkyRcStagedSelect):
 
     @property
     def current_option(self) -> str:
-        """The staged program, or the first available one if it no longer fits.
-
-        Restored selections are applied per entity, so a program restored
-        before its battery type can briefly disagree with it.
-        """
+        """The staged program, or the first available one if it no longer fits."""
         options = self.options
         if self._staged.program not in options:
             return options[0]
         return self._staged.program
 
     async def async_select_option(self, option: str) -> None:
-        """Change the program, resetting its parameters to their defaults."""
-        staged = self._staged
-        staged.program = option
-        self.coordinator.staged[self._channel] = staged.with_defaults()
-        self.coordinator.async_update_listeners()
+        """Change the program, refilling the parameters it takes.
+
+        Values entered for this program before come back; the rest fall back on
+        what was last entered elsewhere, then on the program's own defaults.
+        """
+        self.coordinator.async_select(self._channel, program=option)
 
 
 class SkyRcCycleOrderSelect(SkyRcStagedSelect):
@@ -155,16 +181,50 @@ class SkyRcCycleOrderSelect(SkyRcStagedSelect):
         return CYCLE_ORDER_NAMES[self._staged.cycle_model]
 
     async def async_select_option(self, option: str) -> None:
-        self._staged.cycle_model = CYCLE_ORDER_CODES[option]
-        self.coordinator.async_update_listeners()
-
-    def _restore(self, value: str) -> None:
-        """The order is stored as the cycle_model byte, not by name."""
-        if value in CYCLE_ORDER_CODES:
-            self._staged.cycle_model = CYCLE_ORDER_CODES[value]
+        self.coordinator.async_set_parameter(
+            self._channel, CYCLE_MODEL, CYCLE_ORDER_CODES[option]
+        )
 
 
-class SkyRcBeepVolumeSelect(SkyRcEntity, SelectEntity):
+class SkyRcPresetSelect(SkyRcSelect):
+    """The saved preset a channel is running, and the way to stage another.
+
+    Selecting a preset applies every parameter it holds to the channel; editing
+    any of them afterwards leaves the selection blank again, because what is
+    staged is no longer the preset.
+    """
+
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_translation_key = "preset"
+
+    def __init__(self, coordinator: SkyRcCoordinator, channel: str) -> None:
+        super().__init__(coordinator)
+        self._channel = channel
+        self._attr_translation_placeholders = {"channel": channel}
+        self._attr_unique_id = f"{coordinator.address}_{channel}_preset"
+
+    @property
+    def options(self) -> list[str]:
+        return sorted(self.coordinator.programs.presets)
+
+    @property
+    def available(self) -> bool:
+        """Nothing to pick until a preset has been saved."""
+        return bool(self.coordinator.programs.presets)
+
+    @property
+    def current_option(self) -> str | None:
+        return self.coordinator.programs.applied.get(self._channel)
+
+    async def async_select_option(self, option: str) -> None:
+        self.coordinator.async_apply_preset(self._channel, option)
+
+    async def async_handle_save_preset(self, name: str) -> None:
+        """Save this channel's staged program under ``name``."""
+        self.coordinator.async_save_preset(name, self._channel)
+
+
+class SkyRcBeepVolumeSelect(SkyRcSelect):
     """The charger's beep volume — System Settings ▸ Volume."""
 
     _attr_entity_category = EntityCategory.CONFIG

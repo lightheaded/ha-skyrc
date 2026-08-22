@@ -167,3 +167,130 @@ def test_validate_ignores_parameters_the_program_does_not_use():
         ),
         "A",
     )
+
+
+# --- staged programs, remembered values and presets -----------------------
+
+StagedPrograms = programs.StagedPrograms
+CHANNELS = ("A", "B", "C", "D")
+
+
+def test_a_typed_value_survives_a_program_change_and_back():
+    staged = StagedPrograms(CHANNELS)
+    staged.set_parameter("A", "charge_current", 3000)
+    staged.select("A", program="discharge")
+    staged.select("A", program="balance_charge")
+    assert staged.get("A").charge_current == 3000
+
+
+def test_currents_carry_over_to_the_new_program_but_voltages_do_not():
+    staged = StagedPrograms(CHANNELS)
+    staged.set_parameter("A", "charge_current", 2500)
+    staged.set_parameter("A", "charge_voltage", 4250)
+    staged.select("A", battery_type="life")
+    config = staged.get("A")
+    # A current belongs to the pack in front of you.
+    assert config.charge_current == 2500
+    # A voltage belongs to the chemistry: LiFe gets its own default, not a
+    # LiPo setpoint clamped onto the top of the LiFe range.
+    assert config.charge_voltage == 3650
+
+
+def test_a_value_is_rounded_into_the_range_the_charger_takes():
+    staged = StagedPrograms(CHANNELS)
+    assert staged.set_parameter("A", "charge_current", 2_549) == 2500
+    assert staged.set_parameter("A", "charge_current", 99_999) == 10_000
+
+
+def test_switching_battery_type_moves_to_a_program_it_offers():
+    staged = StagedPrograms(CHANNELS)
+    # Nickel packs have no balance charge.
+    staged.select("A", battery_type="nimh")
+    assert staged.get("A").program in programs.programs_for("nimh")
+
+
+def test_channels_remember_separately():
+    staged = StagedPrograms(CHANNELS)
+    staged.set_parameter("A", "charge_current", 3000)
+    assert staged.get("B").charge_current != 3000
+
+
+def test_a_preset_can_be_saved_and_applied_to_another_channel():
+    staged = StagedPrograms(CHANNELS)
+    staged.select("A", battery_type="liion", program="storage")
+    staged.set_parameter("A", "cell_count", 6)
+    staged.set_parameter("A", "charge_current", 2000)
+    staged.save_preset("6S storage", "A")
+
+    staged.apply_preset("C", "6S storage")
+    config = staged.get("C")
+    assert (config.battery_type, config.program) == ("liion", "storage")
+    assert (config.cell_count, config.charge_current) == (6, 2000)
+    assert staged.applied["C"] == "6S storage"
+
+
+def test_editing_a_channel_clears_the_preset_it_matched():
+    staged = StagedPrograms(CHANNELS)
+    staged.save_preset("mine", "A")
+    staged.set_parameter("A", "charge_current", 700)
+    assert "A" not in staged.applied
+
+
+def test_deleting_a_preset_clears_it_everywhere():
+    staged = StagedPrograms(CHANNELS)
+    staged.save_preset("mine", "A")
+    staged.apply_preset("B", "mine")
+    staged.delete_preset("mine")
+    assert staged.presets == {}
+    assert staged.applied == {}
+
+
+def test_everything_survives_a_round_trip_through_storage():
+    staged = StagedPrograms(CHANNELS)
+    staged.select("A", battery_type="lipo", program="storage")
+    staged.set_parameter("A", "charge_current", 2000)
+    staged.save_preset("mine", "A")
+    staged.select("A", program="discharge")
+
+    restored = StagedPrograms(CHANNELS)
+    restored.restore(staged.as_dict())
+    assert restored.get("A").program == "discharge"
+    assert restored.presets["mine"].charge_current == 2000
+    # And the memory came with it: going back to storage brings the value back.
+    restored.select("A", program="storage")
+    assert restored.get("A").charge_current == 2000
+
+
+def test_restore_ignores_junk():
+    staged = StagedPrograms(CHANNELS)
+    staged.restore(
+        {
+            "staged": {"A": {"battery_type": "unobtainium"}, "Z": {}},
+            "memory": "not a mapping",
+            "presets": {"mine": {"program": 7}},
+            "applied": {"A": "gone"},
+        }
+    )
+    assert staged.get("A").battery_type == "lipo"
+    assert staged.applied == {}
+    assert staged.presets["mine"].program == "balance_charge"
+
+
+def test_stored_values_are_clamped_on_the_way_back_in():
+    """Limits can change between versions; a stored value follows the new one."""
+    staged = StagedPrograms(CHANNELS)
+    staged.restore(
+        {
+            "staged": {
+                "A": {
+                    "battery_type": "lipo",
+                    "program": "charge",
+                    "charge_voltage": 9999,
+                    "cell_count": 99,
+                }
+            }
+        }
+    )
+    config = staged.get("A")
+    assert config.charge_voltage == 4250
+    assert config.cell_count == 6

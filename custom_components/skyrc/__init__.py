@@ -5,7 +5,9 @@ from __future__ import annotations
 from homeassistant.const import CONF_ADDRESS, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.storage import Store
 
+from .const import DOMAIN, STORAGE_VERSION
 from .coordinator import SkyRcConfigEntry, SkyRcCoordinator
 
 PLATFORMS: list[Platform] = [
@@ -14,6 +16,7 @@ PLATFORMS: list[Platform] = [
     Platform.SELECT,
     Platform.SENSOR,
     Platform.SWITCH,
+    Platform.TEXT,
 ]
 
 
@@ -22,6 +25,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: SkyRcConfigEntry) -> boo
     _async_remove_charging_binary_sensors(hass, entry)
 
     coordinator = SkyRcCoordinator(hass, entry, entry.data[CONF_ADDRESS])
+    await coordinator.async_load_programs()
     await coordinator.async_config_entry_first_refresh()
 
     entry.runtime_data = coordinator
@@ -38,6 +42,11 @@ async def _async_reload_entry(hass: HomeAssistant, entry: SkyRcConfigEntry) -> N
 async def async_unload_entry(hass: HomeAssistant, entry: SkyRcConfigEntry) -> bool:
     """Unload a config entry."""
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: SkyRcConfigEntry) -> None:
+    """Drop the staged programs and presets kept for a removed charger."""
+    await Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}").async_remove()
 
 
 def _async_remove_charging_binary_sensors(
