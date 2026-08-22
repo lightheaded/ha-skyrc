@@ -7,7 +7,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.storage import Store
 
-from .const import DOMAIN, STORAGE_VERSION
+from .const import CHANNELS, DOMAIN, STORAGE_VERSION
 from .coordinator import SkyRcConfigEntry, SkyRcCoordinator
 
 PLATFORMS: list[Platform] = [
@@ -63,10 +63,18 @@ def _async_remove_stale_entities(hass: HomeAssistant, entry: SkyRcConfigEntry) -
 
     * the per-channel 'charging' binary sensors removed in 0.2.0 — the channel
       status sensor reports charging/discharging directly now;
-    * the charger-wide preset name field and the per-channel save-preset
-      buttons removed in 0.4.0b3, replaced by one field per channel that saves
-      as soon as a name is typed into it.
+    * the charger-wide preset name field of 0.4.0b1, now one field per channel;
+    * the 'save preset as' fields of 0.4.0b3, which saved on enter — the save
+      button they replaced is back, so the name field is a field again.
+
+    Matched by exact unique_id, not by suffix: the per-channel preset name
+    fields end in '_preset_name' too, and a suffix match would sweep away the
+    entities this integration is currently creating.
     """
+    address = entry.data[CONF_ADDRESS]
+    gone = {f"{address}_preset_name"} | {
+        f"{address}_{channel}_save_preset_as" for channel in CHANNELS
+    }
     registry = er.async_get(hass)
     stale = [
         entity.entity_id
@@ -75,14 +83,7 @@ def _async_remove_stale_entities(hass: HomeAssistant, entry: SkyRcConfigEntry) -
             entity.domain == Platform.BINARY_SENSOR
             and entity.unique_id.endswith("_charging")
         )
-        or (
-            entity.domain == Platform.TEXT
-            and entity.unique_id.endswith("_preset_name")
-        )
-        or (
-            entity.domain == Platform.BUTTON
-            and entity.unique_id.endswith("_save_preset")
-        )
+        or (entity.domain == Platform.TEXT and entity.unique_id in gone)
     ]
     for entity_id in stale:
         registry.async_remove(entity_id)

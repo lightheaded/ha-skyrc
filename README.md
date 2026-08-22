@@ -123,7 +123,8 @@ Each channel gets a staged program, then two buttons:
 | `select.…_channel_a_preset` | applies a saved preset to the channel |
 | `button.…_channel_a_start` | runs the staged program |
 | `button.…_channel_a_stop` | stops the channel, and clears a latched error |
-| `text.…_channel_a_save_preset_as` | type a name here to save what is staged as a preset |
+| `text.…_channel_a_preset_name` | the name channel A's next saved preset gets |
+| `button.…_channel_a_save_preset` | saves what is staged, under that name |
 
 <img width="620" alt="Controls card on the Home Assistant device page: start and stop buttons for channels A to D, next to the activity log of the channel status sensors" src="https://raw.githubusercontent.com/lightheaded/ha-skyrc/master/images/controls.png" />
 
@@ -152,10 +153,11 @@ count, currents and voltages — kept by Home Assistant and applied to any
 channel:
 
 1. Stage the program you want on a channel.
-2. Type a name in that channel's **save preset as** field and press enter.
+2. Type a name in that channel's **preset name** field.
+3. Press **Channel X save preset**.
 
-The field empties again, which is what saved looks like. From then on the
-channel's **preset** select stages the lot in one pick — it reads unavailable
+Both sit in that channel's own block on the device page, next to its **preset**
+select — which stages the lot in one pick from then on, and reads unavailable
 until the first preset exists, because there is nothing to pick. Editing
 any parameter afterwards leaves the select blank again — what is staged is no
 longer the preset. Saving over a name replaces it; `skyrc.delete_preset` removes

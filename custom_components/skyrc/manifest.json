@@ -14,5 +14,5 @@
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/lightheaded/ha-skyrc/issues",
   "requirements": ["bleak-retry-connector>=3.5.0"],
-  "version": "0.4.0b3"
+  "version": "0.4.0b4"
 }
