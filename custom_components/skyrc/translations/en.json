@@ -169,6 +169,9 @@
       },
       "save_preset": {
         "name": "Channel {channel} save preset"
+      },
+      "delete_preset": {
+        "name": "Channel {channel} delete preset"
       }
     },
     "text": {

@@ -68,6 +68,7 @@ async def async_setup_entry(
             SkyRcStartButton(coordinator, channel),
             SkyRcStopButton(coordinator, channel),
             SkyRcSavePresetButton(coordinator, channel),
+            SkyRcDeletePresetButton(coordinator, channel),
         )
     )
 
@@ -161,3 +162,33 @@ class SkyRcSavePresetButton(SkyRcChannelButton):
         self.coordinator.async_save_preset(
             self.coordinator.preset_names[self._channel], self._channel
         )
+
+
+class SkyRcDeletePresetButton(SkyRcChannelButton):
+    """Deletes the preset the channel is set to.
+
+    Presets belong to the charger, so this removes it everywhere — but it
+    deletes what the channel's preset select is showing rather than a name
+    typed somewhere, so what is about to go is on screen next to the button.
+    """
+
+    _key = "delete_preset"
+    _attr_translation_key = "delete_preset"
+    _attr_entity_category = EntityCategory.CONFIG
+
+    @property
+    def _selected(self) -> str | None:
+        return self.coordinator.programs.applied.get(self._channel)
+
+    @property
+    def available(self) -> bool:
+        """Only offer to delete while the channel is set to a preset."""
+        return self._selected is not None
+
+    async def async_press(self) -> None:
+        if (name := self._selected) is None:
+            raise ServiceValidationError(
+                f"Channel {self._channel} is not set to a preset; pick the one "
+                "to delete in its preset select first"
+            )
+        self.coordinator.async_delete_preset(name)
