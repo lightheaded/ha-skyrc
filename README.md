@@ -125,6 +125,7 @@ Each channel gets a staged program, then two buttons:
 | `button.…_channel_a_stop` | stops the channel, and clears a latched error |
 | `text.…_channel_a_preset_name` | the name channel A's next saved preset gets |
 | `button.…_channel_a_save_preset` | saves what is staged, under that name |
+| `button.…_channel_a_delete_preset` | deletes the preset the channel is set to |
 
 <img width="620" alt="Controls card on the Home Assistant device page: start and stop buttons for channels A to D, next to the activity log of the channel status sensors" src="https://raw.githubusercontent.com/lightheaded/ha-skyrc/master/images/controls.png" />
 
@@ -160,8 +161,13 @@ Both sit in that channel's own block on the device page, next to its **preset**
 select — which stages the lot in one pick from then on, and reads unavailable
 until the first preset exists, because there is nothing to pick. Editing
 any parameter afterwards leaves the select blank again — what is staged is no
-longer the preset. Saving over a name replaces it; `skyrc.delete_preset` removes
-one:
+longer the preset. Saving over a name replaces it.
+
+**Channel X delete preset** removes the preset that channel is set to — what it
+will delete is the name in the select right above it, and the button is greyed
+out while the channel is not set to one. Presets belong to the charger, so it
+goes from every channel. `skyrc.delete_preset` does the same by name, from an
+automation:
 
 ```yaml
 action: skyrc.delete_preset
