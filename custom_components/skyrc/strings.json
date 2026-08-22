@@ -166,11 +166,14 @@
       },
       "stop": {
         "name": "Channel {channel} stop"
+      },
+      "save_preset": {
+        "name": "Channel {channel} save preset"
       }
     },
     "text": {
-      "save_preset_as": {
-        "name": "Channel {channel} save preset as"
+      "preset_name": {
+        "name": "Channel {channel} preset name"
       }
     },
     "switch": {
