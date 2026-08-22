@@ -22,7 +22,7 @@ PLATFORMS: list[Platform] = [
 
 async def async_setup_entry(hass: HomeAssistant, entry: SkyRcConfigEntry) -> bool:
     """Set up SkyRC Q200neo from a config entry."""
-    _async_remove_charging_binary_sensors(hass, entry)
+    _async_remove_stale_entities(hass, entry)
 
     coordinator = SkyRcCoordinator(hass, entry, entry.data[CONF_ADDRESS])
     await coordinator.async_load_programs()
@@ -55,20 +55,34 @@ async def async_remove_entry(hass: HomeAssistant, entry: SkyRcConfigEntry) -> No
     await Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}").async_remove()
 
 
-def _async_remove_charging_binary_sensors(
-    hass: HomeAssistant, entry: SkyRcConfigEntry
-) -> None:
-    """Drop the per-channel 'charging' binary sensors removed in 0.2.0.
+def _async_remove_stale_entities(hass: HomeAssistant, entry: SkyRcConfigEntry) -> None:
+    """Drop entities earlier versions created that nothing updates any more.
 
-    The channel status sensor now reports charging/discharging directly; the
-    old entities would otherwise linger in the registry as unavailable.
+    They would otherwise linger in the registry as unavailable rows on the
+    device page:
+
+    * the per-channel 'charging' binary sensors removed in 0.2.0 — the channel
+      status sensor reports charging/discharging directly now;
+    * the charger-wide preset name field and the per-channel save-preset
+      buttons removed in 0.4.0b3, replaced by one field per channel that saves
+      as soon as a name is typed into it.
     """
     registry = er.async_get(hass)
     stale = [
         entity.entity_id
         for entity in er.async_entries_for_config_entry(registry, entry.entry_id)
-        if entity.domain == Platform.BINARY_SENSOR
-        and entity.unique_id.endswith("_charging")
+        if (
+            entity.domain == Platform.BINARY_SENSOR
+            and entity.unique_id.endswith("_charging")
+        )
+        or (
+            entity.domain == Platform.TEXT
+            and entity.unique_id.endswith("_preset_name")
+        )
+        or (
+            entity.domain == Platform.BUTTON
+            and entity.unique_id.endswith("_save_preset")
+        )
     ]
     for entity_id in stale:
         registry.async_remove(entity_id)

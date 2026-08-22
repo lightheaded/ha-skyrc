@@ -123,8 +123,7 @@ Each channel gets a staged program, then two buttons:
 | `select.…_channel_a_preset` | applies a saved preset to the channel |
 | `button.…_channel_a_start` | runs the staged program |
 | `button.…_channel_a_stop` | stops the channel, and clears a latched error |
-| `button.…_channel_a_save_preset` | saves what is staged, under the charger's preset name |
-| `text.…_preset_name` | the name the next saved preset gets |
+| `text.…_channel_a_save_preset_as` | type a name here to save what is staged as a preset |
 
 <img width="620" alt="Controls card on the Home Assistant device page: start and stop buttons for channels A to D, next to the activity log of the channel status sensors" src="https://raw.githubusercontent.com/lightheaded/ha-skyrc/master/images/controls.png" />
 
@@ -149,13 +148,15 @@ unavailable in the meantime.
 ### Presets
 
 A preset is a whole staged program under a name — battery type, program, cell
-count, currents and voltages — saved on the charger and applied to any channel:
+count, currents and voltages — kept by Home Assistant and applied to any
+channel:
 
 1. Stage the program you want on a channel.
-2. Type a name in **Preset name**.
-3. Press **Channel X save preset**.
+2. Type a name in that channel's **save preset as** field and press enter.
 
-From then on the channel's **preset** select stages the lot in one pick. Editing
+The field empties again, which is what saved looks like. From then on the
+channel's **preset** select stages the lot in one pick — it reads unavailable
+until the first preset exists, because there is nothing to pick. Editing
 any parameter afterwards leaves the select blank again — what is staged is no
 longer the preset. Saving over a name replaces it; `skyrc.delete_preset` removes
 one:

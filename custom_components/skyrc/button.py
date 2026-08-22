@@ -9,7 +9,6 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant.components.button import ButtonEntity
-from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv, entity_platform
@@ -67,7 +66,6 @@ async def async_setup_entry(
         for button in (
             SkyRcStartButton(coordinator, channel),
             SkyRcStopButton(coordinator, channel),
-            SkyRcSavePresetButton(coordinator, channel),
         )
     )
 
@@ -144,20 +142,3 @@ class SkyRcStopButton(SkyRcChannelButton):
     async def async_press(self) -> None:
         await self.coordinator.async_stop(self._channel)
 
-
-class SkyRcSavePresetButton(SkyRcChannelButton):
-    """Saves the channel's staged program under the charger's preset name."""
-
-    _key = "save_preset"
-    _attr_translation_key = "save_preset"
-    _attr_entity_category = EntityCategory.CONFIG
-
-    @property
-    def available(self) -> bool:
-        """Saving what is staged does not need the charger."""
-        return True
-
-    async def async_press(self) -> None:
-        self.coordinator.async_save_preset(
-            self.coordinator.preset_name, self._channel
-        )

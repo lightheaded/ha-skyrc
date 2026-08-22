@@ -66,14 +66,6 @@ class SkyRcCoordinator(DataUpdateCoordinator[dict[str, ChannelStatus]]):
         self._store: Store[dict[str, Any]] = Store(
             hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}"
         )
-        # The name the next preset saved from a channel will get.
-        self.preset_name = ""
-
-    @callback
-    def async_set_preset_name(self, name: str) -> None:
-        """Set the name the next saved preset will get."""
-        self.preset_name = name
-        self.async_update_listeners()
 
     @property
     def staged(self) -> dict[str, ProgramConfig]:
@@ -113,10 +105,7 @@ class SkyRcCoordinator(DataUpdateCoordinator[dict[str, ChannelStatus]]):
         """Save a channel's staged program as a named preset."""
         name = name.strip()
         if not name:
-            raise ServiceValidationError(
-                "A preset needs a name; put one in the charger's preset name "
-                "field first"
-            )
+            raise ServiceValidationError("A preset needs a name")
         if len(name) > PRESET_NAME_MAX_LENGTH:
             raise ServiceValidationError(
                 f"Preset name {name!r} is longer than {PRESET_NAME_MAX_LENGTH} "
