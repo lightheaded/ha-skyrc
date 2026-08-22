@@ -141,6 +141,11 @@ still cannot be left staged. Voltage setpoints are the exception to the
 carry-over: they belong to the chemistry, and a 4200 mV LiPo setpoint has no
 business being squeezed into the LiFe range.
 
+None of it needs the charger, either. Stage a program or edit a preset with the
+charger switched off and it is there when the charger comes back — only the
+entities that actually talk to it (the sensors, start and stop) report
+unavailable in the meantime.
+
 ### Presets
 
 A preset is a whole staged program under a name — battery type, program, cell

@@ -26,7 +26,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: SkyRcConfigEntry) -> boo
 
     coordinator = SkyRcCoordinator(hass, entry, entry.data[CONF_ADDRESS])
     await coordinator.async_load_programs()
-    await coordinator.async_config_entry_first_refresh()
+    # Deliberately not async_config_entry_first_refresh(): a charger that is
+    # switched off or out of Bluetooth range would abort the whole setup, and
+    # with it the staged programs and presets — which live here rather than on
+    # the charger and need nothing from it. So set up either way, keep polling,
+    # and let the entities that do need the charger report unavailable until a
+    # poll succeeds.
+    await coordinator.async_refresh()
 
     entry.runtime_data = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
